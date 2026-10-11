@@ -21,7 +21,7 @@ export class Simulation implements CombatWorld {
     const p: PlayerState = { id, name, color: COLORS[this.players.size % COLORS.length]!, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0,
       health: CONFIG.maxHealth, score: 0, deaths: 0, weapon: null, ammo: 0, nextFire: 0, shieldUntil: 0, boostUntil: 0, invulnerableUntil: 0, respawnAt: 0, ack: 0 };
     this.players.set(id, p); this.controls.set(id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0 });
-    this.spawn(p, this.players.size - 1); return p;
+    this.spawn(p, this.phase === 'playing' ? undefined : this.players.size - 1); return p;
   }
   removePlayer(id: string) { this.players.delete(id); this.controls.delete(id); for (const [key, p] of this.projectiles) if (p.owner === id) this.projectiles.delete(key); }
   private spawn(p: PlayerState, preferred?: number) {

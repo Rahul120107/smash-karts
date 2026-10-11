@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG, DT } from '../../../shared/src/config.js';
-import { angleDelta, segmentBox } from '../../../shared/src/math.js';
-import { WALLS } from '../../../shared/src/arena.js';
+import { angleDelta } from '../../../shared/src/math.js';
+import { clipCameraRay } from './camera.js';
 import type { Input, PlayerState, Snapshot } from '../../../shared/src/types.js';
 import { connection } from '../networking/connection.js';
 import { Interpolation, Prediction } from '../networking/prediction.js';
@@ -84,7 +84,11 @@ export class ArenaGame {
     this.lastFrame = performance.now();
   }
   private frame() {
-    const now = performance.now(), delta = Math.min(0.1, (now - this.previous) / 1000); this.previous = now;
+    const now = performance.now();
+    // Menus and background tabs do not need a full-speed arena render loop.
+    const interval = document.hidden ? 250 : connection.state.snapshot?.phase === 'playing' ? 0 : 50;
+    if (now - this.previous < interval) return;
+    const delta = Math.min(0.1, (now - this.previous) / 1000); this.previous = now;
     const state = connection.state.snapshot, id = connection.state.id;
     const self = state?.players.find(p => p.id === id) ?? null;
     const playing = state?.phase === 'playing' && connection.state.status === 'connected';
@@ -139,12 +143,12 @@ export class ArenaGame {
     const fx = Math.sin(this.renderYaw), fz = Math.cos(this.renderYaw);
     this.aim.set(pos.x + fx * 1.8, pos.y + 1.2, pos.z + fz * 1.8);
     this.cameraTarget.set(pos.x - fx * 8.8, pos.y + 6.1, pos.z - fz * 8.8);
-    for (const w of WALLS) {
-      const t = segmentBox(this.aim, this.cameraTarget, { x: w.x - w.width / 2 - 0.3, y: -1, z: w.z - w.depth / 2 - 0.3 }, { x: w.x + w.width / 2 + 0.3, y: w.height + 0.3, z: w.z + w.depth / 2 + 0.3 });
-      if (t !== null) this.cameraTarget.lerpVectors(this.aim, this.cameraTarget, Math.max(0.2, t - 0.03));
-    }
+    const anchor = { x: pos.x, y: pos.y + 1.2, z: pos.z };
+    Object.assign(this.aim, clipCameraRay(anchor, this.aim));
+    Object.assign(this.cameraTarget, clipCameraRay(anchor, this.cameraTarget));
     if (!this.cameraReady || this.camera.position.distanceTo(this.cameraTarget) > 20) this.camera.position.copy(this.cameraTarget);
     else this.camera.position.lerp(this.cameraTarget, 1 - Math.exp(-12 * dt));
+    Object.assign(this.camera.position, clipCameraRay(anchor, this.camera.position));
     this.camera.lookAt(this.aim); this.cameraReady = true;
   }
   dispose() {

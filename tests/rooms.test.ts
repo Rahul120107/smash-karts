@@ -35,4 +35,10 @@ describe('room lifecycle', () => {
     const active = manager.create('b', 'Bravo'); manager.start('b');
     expect(manager.cleanup(active.lastActivity + 1e9)).toEqual([]); expect(manager.rooms.size).toBe(1);
   });
+  it('evicts an inactive completed match and removes all its memberships', () => {
+    const manager = new RoomManager(8, 0.02); const room = manager.create('a', 'Alpha'); manager.join('b', 'Bravo', room.code); manager.start('a');
+    room.simulation.step(); room.simulation.step(); expect(room.simulation.phase).toBe('finished');
+    expect(manager.cleanup(room.lastActivity + CONFIG.roomIdleSeconds * 1000 + 1)).toEqual(['a', 'b']);
+    expect(manager.rooms.size).toBe(0); expect(manager.memberships.size).toBe(0);
+  });
 });

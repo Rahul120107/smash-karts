@@ -60,6 +60,22 @@ describe('projectile behaviors', () => {
     advance(world, 1.2); expect(world.projectiles.size).toBe(1); advance(world, 0.2);
     expect(world.projectiles.size).toBe(0); expect(b.health).toBeLessThan(100); expect(world.events.some(e => e.kind === 'explosion')).toBe(true);
   });
+  it('bombs reflect only the velocity into a wall and keep tangential motion', () => {
+    const { world, a } = duel(); equip(a, 'bomb'); activate(world, a); const bomb = world.projectiles.values().next().value!;
+    Object.assign(bomb, { x: 34.5, y: 1, z: 10, vx: 20, vy: 0, vz: 8 }); world.step();
+    expect(bomb.vx).toBeLessThan(0); expect(bomb.vz).toBe(8); expect(bomb.x).toBeLessThan(35 - bomb.radius); expect(bomb.z).toBeGreaterThan(10);
+  });
+  it('bombs land on obstacle tops instead of passing through them', () => {
+    const { world, a } = duel(); equip(a, 'bomb'); activate(world, a); const bomb = world.projectiles.values().next().value!;
+    Object.assign(bomb, { x: 0, z: 0, y: 3.8 + bomb.radius + 0.08, vx: 0, vy: -12, vz: 0 }); world.step();
+    expect(bomb.y).toBeGreaterThan(3.8 + bomb.radius); expect(bomb.vy).toBeGreaterThan(0);
+  });
+  it('chooses a free spawn when a new player joins an active match after a departure', () => {
+    const { world, a, b } = duel(); const third = world.addPlayer('third', 'Third');
+    world.start(); world.removePlayer(b.id); const joined = world.addPlayer('replacement', 'Replacement');
+    expect(Math.hypot(joined.x - third.x, joined.z - third.z)).toBeGreaterThan(CONFIG.kartRadius * 2);
+    expect(Math.hypot(joined.x - a.x, joined.z - a.z)).toBeGreaterThan(CONFIG.kartRadius * 2);
+  });
   it('scatter cannon spawns five distinct trajectories and can land multiple pellets', () => {
     const { world, a, b } = duel(); b.z = 5; equip(a, 'scatter'); activate(world, a);
     expect(world.projectiles.size).toBe(5); expect(new Set([...world.projectiles.values()].map(p => p.vx)).size).toBe(5);

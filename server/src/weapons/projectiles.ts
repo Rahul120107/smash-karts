@@ -4,7 +4,7 @@ import { clamp, distance, lerp, segmentSphere } from '../../../shared/src/math.j
 import type { Projectile, Vec3 } from '../../../shared/src/types.js';
 import { WEAPONS } from '../../../shared/src/weapons.js';
 import { damage, explode } from '../combat/damage.js';
-import { terrainHit, wallHit } from '../collisions/projectile.js';
+import { terrainHit, wallHit, wallContact } from '../collisions/projectile.js';
 import type { CombatWorld } from '../simulation/world.js';
 
 function steerHoming(world: CombatWorld, p: Projectile): void {
@@ -21,12 +21,20 @@ function steerHoming(world: CombatWorld, p: Projectile): void {
   p.vx *= speed / norm; p.vy *= speed / norm; p.vz *= speed / norm;
 }
 function stepBomb(p: Projectile): void {
-  const old = { x: p.x, y: p.y, z: p.z };
   p.vy -= CONFIG.gravity * DT;
-  const next = { x: p.x + p.vx * DT, y: p.y + p.vy * DT, z: p.z + p.vz * DT };
-  const hit = wallHit(old, next, p.radius);
-  if (hit !== null) { p.vx *= -0.5; p.vz *= -0.5; } else { p.x = next.x; p.z = next.z; }
-  p.y = next.y;
+  let remaining = DT;
+  for (let bounce = 0; bounce < 3 && remaining > 1e-8; bounce++) {
+    const old = { x: p.x, y: p.y, z: p.z };
+    const next = { x: p.x + p.vx * remaining, y: p.y + p.vy * remaining, z: p.z + p.vz * remaining };
+    const contact = wallContact(old, next, p.radius);
+    if (!contact) { Object.assign(p, next); break; }
+    hitPosition(p, old, next, contact.time);
+    const n = contact.normal;
+    p.x += n.x * 0.0001; p.y += n.y * 0.0001; p.z += n.z * 0.0001;
+    const inward = p.vx * n.x + p.vy * n.y + p.vz * n.z;
+    if (inward < 0) { p.vx -= 1.5 * inward * n.x; p.vy -= 1.5 * inward * n.y; p.vz -= 1.5 * inward * n.z; }
+    remaining *= 1 - contact.time;
+  }
   const floor = groundHeight(p.x, p.z) + p.radius;
   if (p.y <= floor) { p.y = floor; p.vy = Math.abs(p.vy) > 1.5 ? Math.abs(p.vy) * 0.42 : 0; p.vx *= 0.92; p.vz *= 0.92; }
 }

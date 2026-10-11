@@ -2,11 +2,12 @@ import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 import { startServer } from '../../server/src/networking/server.js';
 import { WEAPON_IDS, WEAPONS } from '../../shared/src/weapons.js';
 import type { ServerMessage, Snapshot } from '../../shared/src/types.js';
+import { writeFile } from 'node:fs/promises';
 let server: Awaited<ReturnType<typeof startServer>>;
 let contexts: BrowserContext[] = [];
 const errors: string[] = [];
 test.beforeEach(async () => { server = await startServer({ port: 0, host: '127.0.0.1', duration: 12 }); errors.length = 0; });
-test.afterEach(async () => { for (const ctx of contexts.splice(0)) await ctx.close(); await server.close(); expect(errors).toEqual([]); });
+test.afterEach(async () => { await Promise.all(contexts.splice(0).map(ctx => ctx.close())); await server.close(); expect(errors).toEqual([]); });
 function observe(page: Page) {
   const observed: { latest: Snapshot | null; history: Snapshot[] } = { latest: null, history: [] };
   page.on('pageerror', error => errors.push(error.message));
@@ -121,4 +122,59 @@ test('invalid room codes and disconnected servers give usable feedback', async (
   await page.getByRole('button', { name: 'Join' }).click(); await expect(page.getByRole('alert')).toContainText('Room not found');
   await page.getByRole('button', { name: 'Dismiss error' }).click(); await page.getByRole('button', { name: 'Create room' }).click(); await expect(page.getByTestId('room-code')).toBeVisible();
   await server.close(); await expect(page.getByText('Disconnected · retrying…')).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('server restarted');
+});
+
+test('a browser automatically rejoins a surviving room after transport loss', async ({ browser }) => {
+  const ctxA = await browser.newContext(), ctxB = await browser.newContext(); contexts.push(ctxA, ctxB);
+  const a = await ctxA.newPage(), b = await ctxB.newPage(); observe(a); observe(b);
+  let disconnect: (() => void) | undefined;
+  await a.routeWebSocket('**/ws', route => {
+    const upstream = route.connectToServer();
+    disconnect = () => { route.close({ code: 4000, reason: 'Test transport interruption' }); upstream.close(); };
+  });
+  const code = await lobby(a, b); const world = server.rooms.rooms.get(code)!.simulation;
+  const oldId = [...world.players.values()].find(p => p.name === 'Roadrunner')!.id;
+  disconnect!();
+  await expect.poll(() => [...world.players.values()].find(p => p.name === 'Roadrunner')?.id).not.toBe(oldId);
+  await expect(a.getByTestId('room-code')).toHaveText(code);
+  await expect(a.locator('.lobby-players')).toContainText('Dusty');
+  await expect(b.getByRole('button', { name: 'Start match' })).toBeVisible();
+  await b.getByRole('button', { name: 'Start match' }).click(); await expect(a.getByTestId('match-timer')).toBeVisible();
+  await a.locator('canvas').click({ position: { x: 600, y: 400 } }); await a.keyboard.down('KeyW');
+  await expect.poll(() => [...world.players.values()].find(p => p.name === 'Roadrunner')?.ack ?? 0).toBeGreaterThan(10);
+  await a.keyboard.up('KeyW');
+});
+
+test('eight independent browser players render and send input concurrently', async ({ browser }, testInfo) => {
+  test.setTimeout(240000);
+  const pages: Page[] = []; const observations: ReturnType<typeof observe>[] = [];
+  for (let i = 0; i < 8; i++) {
+    const context = await browser.newContext({ viewport: { width: 640, height: 720 } }); contexts.push(context); const page = await context.newPage(); pages.push(page); observations.push(observe(page));
+    await page.goto(`http://127.0.0.1:${server.port}`); await page.getByLabel('YOUR NICKNAME').fill(`Browser ${i + 1}`);
+    if (i === 0) await page.getByRole('button', { name: 'Create room' }).click();
+    else { await page.getByLabel('Room code').fill(await pages[0]!.getByTestId('room-code').innerText()); await page.getByRole('button', { name: 'Join' }).click(); }
+    await expect(page.getByTestId('room-code')).toBeVisible();
+  }
+  const code = await pages[0]!.getByTestId('room-code').innerText(); server.rooms.rooms.get(code)!.simulation.duration = 60;
+  await expect.poll(() => observations[0]!.latest?.players.length).toBe(8);
+  await pages[0]!.getByRole('button', { name: 'Start match' }).click();
+  for (const page of pages) {
+    await expect(page.getByTestId('match-timer')).toBeVisible(); await page.locator('canvas').click({ position: { x: 320, y: 360 } });
+    await page.keyboard.down('KeyW'); await page.keyboard.down('Space');
+  }
+  const measurements = await Promise.all(pages.map(page => page.evaluate(() => new Promise<{ frames: number; elapsed: number; maxFrameGap: number }>(ok => {
+    const start = performance.now(); let frames = 0, previous = start, maxFrameGap = 0;
+    const frame = (now: number) => { frames++; maxFrameGap = Math.max(maxFrameGap, now - previous); previous = now;
+      if (now - start >= 2000) ok({ frames, elapsed: now - start, maxFrameGap }); else requestAnimationFrame(frame);
+    }; requestAnimationFrame(frame);
+  }))));
+  for (const page of pages) { await page.keyboard.up('Space'); await page.keyboard.up('KeyW'); }
+  for (let i = 0; i < pages.length; i++) {
+    await expect.poll(() => observations[i]!.latest?.players.every(p => p.ack >= 10 && Number.isFinite(p.x) && Number.isFinite(p.z))).toBe(true);
+    await expect(pages[i]!.locator('canvas')).toBeVisible(); expect(measurements[i]!.frames).toBeGreaterThan(0);
+  }
+  const report = measurements.map((m, index) => ({ browser: index + 1, ...m, framesPerSecond: Math.round(m.frames / m.elapsed * 1000) }));
+  const output = testInfo.outputPath('eight-browser-performance.json'); await writeFile(output, JSON.stringify(report, null, 2));
+  await testInfo.attach('eight-browser-performance', { path: output, contentType: 'application/json' });
 });

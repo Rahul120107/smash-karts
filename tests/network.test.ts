@@ -30,6 +30,38 @@ async function setup(duration = 180) {
   return { a, b, idA: welcomeA.id, idB: welcomeB.id, code: welcomeA.code };
 }
 describe('real WebSocket multiplayer integration', () => {
+  it('sends a restart notice, clears membership, and shuts down idempotently', async () => {
+    const { a, b } = await setup();
+    const closed = [a, b].map(p => new Promise<number>(ok => p.ws.once('close', code => ok(code))));
+    const first = server!.close(); expect(server!.close()).toBe(first); await first;
+    expect(await Promise.all(closed)).toEqual([1012, 1012]); expect(server!.rooms.memberships.size).toBe(0); expect(server!.rooms.rooms.size).toBe(0);
+  });
+  it('rejoins an existing match after disconnect using a new temporary identity', async () => {
+    const { a, b, idA, idB, code } = await setup(); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing'); a.ws.terminate();
+    await b.state(s => s.players.length === 1 && s.host === idB);
+    const replacement = await Peer.open(server!.port); peers.push(replacement); replacement.send({ type: 'join', name: 'Alpha', code });
+    const welcome = await replacement.wait(m => m.type === 'welcome') as Extract<ServerMessage, { type: 'welcome' }>;
+    expect(welcome.id).not.toBe(idA); const state = await replacement.state(s => s.players.length === 2 && s.phase === 'playing');
+    expect(state.players.find(p => p.id === welcome.id)).toMatchObject({ health: 100, score: 0 });
+  });
+  it('supports separate frontend origins, CORS health checks, and backend-only hosting', async () => {
+    server = await startServer({ port: 0, host: '127.0.0.1', serveClient: false, allowedOrigins: ['https://game.example'] });
+    const base = `http://127.0.0.1:${server.port}`;
+    expect((await fetch(base)).status).toBe(404);
+    expect((await fetch(`${base}/%E0%A4`)).status).toBe(400);
+    const health = await fetch(`${base}/health`, { headers: { Origin: 'https://game.example' } });
+    expect(health.status).toBe(200); expect(health.headers.get('access-control-allow-origin')).toBe('https://game.example');
+    expect((await fetch(`${base}/health`, { headers: { Origin: 'https://denied.example' } })).status).toBe(403);
+    expect((await fetch(`${base}/health`, { method: 'POST' })).status).toBe(405);
+    expect((await fetch(`${base}/health`, { method: 'OPTIONS', headers: { Origin: 'https://game.example' } })).status).toBe(204);
+    const denied = new WebSocket(`${base.replace('http:', 'ws:')}/ws`);
+    const status = await new Promise<string>(ok => denied.once('error', error => ok(error.message))); expect(status).toContain('403');
+  });
+  it('fails cleanly if its port is in use and can bind the port again after shutdown', async () => {
+    server = await startServer({ port: 0, host: '127.0.0.1' }); const port = server.port;
+    await expect(startServer({ port, host: '127.0.0.1' })).rejects.toMatchObject({ code: 'EADDRINUSE' });
+    await server.close(); server = await startServer({ port, host: '127.0.0.1' }); expect(server.port).toBe(port);
+  });
   it('disconnects a message flood and preserves other room members', async () => {
     const { a, b, idB } = await setup();
     const closed = new Promise<number>(ok => a.ws.once('close', code => ok(code)));

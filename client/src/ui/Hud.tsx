@@ -11,7 +11,7 @@ function MiniMap({ state, id }: { state: Snapshot; id: string }) {
   return <svg className="minimap" viewBox="-38 -38 76 76" aria-label="Arena minimap">
     <rect x="-36" y="-36" width="72" height="72" rx="3" fill="#12283ee6"/>
     {WALLS.map((w, i) => <rect key={i} x={w.x - w.width / 2} y={w.z - w.depth / 2} width={w.width} height={w.depth} fill="#5b8299"/>)}
-    {state.pickups.filter(p => p.availableAt <= state.time).map(p => <rect key={p.id} x={p.x - 0.7} y={p.z - 0.7} width="1.4" height="1.4" fill="#ffd365"/>)}
+    {state.pickups.filter(p => p.active).map(p => <rect key={p.id} data-pickup-id={p.id} x={p.x - 0.7} y={p.z - 0.7} width="1.4" height="1.4" fill="#ffd365"/>)}
     {state.players.filter(p => p.health > 0).map(p => p.id === id ? <path key={p.id} d="M0 2.3 -1.8 -1.7 0 -1 1.8 -1.7Z" fill="white" transform={'translate(' + p.x + ' ' + p.z + ') rotate(' + -p.yaw * 180 / Math.PI + ')'}/> : <circle key={p.id} cx={p.x} cy={p.z} r="1.4" fill={'#' + p.color.toString(16).padStart(6, '0')}/>)}
   </svg>;
 }

@@ -113,12 +113,15 @@ export async function startServer(options: ServerOptions = {}) {
     const now = performance.now(); accumulator += Math.min((now - previous) / 1000, 0.25); previous = now;
     let steps = 0;
     while (accumulator >= DT && steps++ < 15) {
+      let pickupChanged = false;
       for (const room of rooms.rooms.values()) {
         const wasPlaying = room.simulation.phase === 'playing'; room.simulation.step();
+        if (wasPlaying && room.simulation.phase === 'playing' && room.simulation.events.some(e =>
+          e.at === room.simulation.time && (e.kind === 'pickup' || e.kind === 'pickupSpawn'))) pickupChanged = true;
         if (wasPlaying && room.simulation.phase === 'finished') { room.lastActivity = Date.now(); log('match_finished', { code: room.code }); }
       }
       accumulator -= DT;
-      if (++networkTicks % (CONFIG.tickRate / CONFIG.snapshotRate) === 0) broadcast();
+      if (++networkTicks % (CONFIG.tickRate / CONFIG.snapshotRate) === 0 || pickupChanged) broadcast();
     }
   }, 4);
   const cleanup = setInterval(() => { for (const id of rooms.cleanup()) { const ws = clients.get(id); if (ws) { send(ws, { type: 'error', message: 'Room closed after ten minutes of inactivity.' }); send(ws, { type: 'left' }); } } }, 30000);

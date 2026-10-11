@@ -44,6 +44,8 @@ test('idle arena redraws on resizing and room changes without continuously consu
   await page.goto(`http://127.0.0.1:${server.port}`); await expect(page.getByLabel('YOUR NICKNAME')).toBeVisible();
   const rendered = async () => Number(await page.locator('.game-canvas').getAttribute('data-idle-renders'));
   await expect.poll(rendered).toBeGreaterThan(0);
+  // Let initial layout/ResizeObserver callbacks settle before measuring idle redraws.
+  await page.evaluate(() => new Promise<void>(ok => requestAnimationFrame(() => requestAnimationFrame(() => ok()))));
   const initial = await rendered(); await page.waitForTimeout(600); expect(await rendered()).toBe(initial);
   await page.setViewportSize({ width: 640, height: 720 }); await expect.poll(rendered).toBeGreaterThan(initial);
   const smallFrames = await rendered(); await page.setViewportSize({ width: 1280, height: 800 }); await expect.poll(rendered).toBeGreaterThan(smallFrames);
@@ -78,6 +80,28 @@ test('two independent browser sessions drive, collect, fire, finish, replay, and
   await expect.poll(() => server.rooms.rooms.get(code)?.host === server.rooms.rooms.get(code)?.simulation.players.values().next().value?.id).toBe(true);
   await b.getByRole('button', { name: 'Leave', exact: true }).click(); await expect.poll(() => server.rooms.rooms.size).toBe(0);
 });
+test('pickup disappearance and glowing respawn synchronize across rendered browsers', async ({ browser }, testInfo) => {
+  const ctxA = await browser.newContext(), ctxB = await browser.newContext(); contexts.push(ctxA, ctxB);
+  const a = await ctxA.newPage(), b = await ctxB.newPage(), seenA = observe(a), seenB = observe(b);
+  const code = await lobby(a, b), world = server.rooms.rooms.get(code)!.simulation; world.duration = 45;
+  await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
+  const markerA = a.locator('.minimap [data-pickup-id="0"]'), markerB = b.locator('.minimap [data-pickup-id="0"]');
+  await expect(markerA).toHaveCount(1); await expect(markerB).toHaveCount(1);
+  const collector = [...world.players.values()].find(p => p.name === 'Roadrunner')!, box = world.pickups[0]!;
+  Object.assign(collector, { x: box.x, y: box.y, z: box.z, vx: 0, vy: 0, vz: 0 });
+  await expect(markerA).toHaveCount(0); await expect(markerB).toHaveCount(0);
+  expect(seenA.latest!.pickups[0]!.active).toBe(false); expect(seenB.latest!.pickups[0]!.active).toBe(false);
+  const collection = seenA.history.flatMap(s => s.events).find(e => e.kind === 'pickup' && e.pickupId === box.id)!;
+  expect(collection).toBeDefined(); await expect(a.getByTestId('equipped-weapon')).not.toHaveText('Find a weapon');
+  Object.assign(collector, { x: -8, z: 24 });
+  await expect.poll(() => seenB.history.flatMap(s => s.events).some(e => e.kind === 'pickupSpawn' && e.pickupId === box.id), { timeout: 20000 }).toBe(true);
+  await expect(markerA).toHaveCount(1); await expect(markerB).toHaveCount(1);
+  const spawnA = seenA.history.flatMap(s => s.events).find(e => e.kind === 'pickupSpawn' && e.pickupId === box.id)!;
+  const spawnB = seenB.history.flatMap(s => s.events).find(e => e.kind === 'pickupSpawn' && e.pickupId === box.id)!;
+  expect(spawnA.id).toBe(spawnB.id); expect(spawnA.at - collection.at).toBeCloseTo(10, 3);
+  await a.screenshot({ path: testInfo.outputPath('pickup-respawn.png') });
+});
+
 test('all eight weapon categories render and synchronize combat between browsers', async ({ browser }, testInfo) => {
   const ctxA = await browser.newContext(), ctxB = await browser.newContext(); contexts.push(ctxA, ctxB);
   const a = await ctxA.newPage(), b = await ctxB.newPage(); const seenA = observe(a), seenB = observe(b);

@@ -3,11 +3,30 @@ import * as THREE from 'three';
 import { Particles } from '../client/src/effects/particles.js';
 import { drivingSoundProfile } from '../client/src/effects/driving-audio.js';
 import { batchStatic } from '../client/src/game/batch.js';
+import { updatePickupVisual } from '../client/src/weapons/pickup-visual.js';
 import type { GameEvent } from '../shared/src/types.js';
 const kart = { x: -8, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0 };
 const event: GameEvent = { id: 1, at: 0, kind: 'explosion', player: 'a', x: -8, y: 0.8, z: 0, radius: 4 };
 
 describe('bounded rendering and driving audio', () => {
+  it('hides collected boxes immediately and never predicts a respawn from a local clock', () => {
+    const visual = new THREE.Group(), halo = new THREE.Group(); halo.name = 'pickup-halo'; visual.add(halo);
+    const box = { id: 0, x: -8, y: 0, z: 18, active: false, availableAt: 10 };
+    updatePickupVisual(visual, box, true, 100, 100000); expect(visual.visible).toBe(false);
+    box.active = true; updatePickupVisual(visual, box, true, 10, 100000);
+    expect(visual.visible).toBe(true); expect(visual.position.x).toBe(-8); expect(visual.position.z).toBe(18);
+    expect(visual.scale.x).toBeCloseTo(0.6); expect(halo.scale.x).toBeCloseTo(1.8);
+    updatePickupVisual(visual, box, true, 10.65, 100650); expect(visual.scale.x).toBeCloseTo(1); expect(halo.scale.x).toBeCloseTo(1);
+    updatePickupVisual(visual, box, false, 11, 101000); expect(visual.visible).toBe(false);
+  });
+  it('renders bounded collection and glowing spawn effects and releases them', () => {
+    const scene = new THREE.Scene(), particles = new Particles(scene);
+    particles.emit({ ...event, kind: 'pickup' }); particles.update(0.01);
+    expect(particles.counts.particles).toBe(12); expect(particles.counts.rings).toBe(1);
+    particles.reset(); particles.emit({ ...event, kind: 'pickupSpawn', pickupId: 0 }); particles.update(0.01);
+    expect(particles.counts.particles).toBe(16); expect(particles.counts.rings).toBe(1); expect(scene.children).toHaveLength(3);
+    particles.update(0.65); expect(particles.counts).toEqual({ particles: 0, skids: 0, rings: 0 }); particles.dispose();
+  });
   it('keeps simultaneous explosions in fixed pools and releases expired effects', () => {
     const scene = new THREE.Scene(), particles = new Particles(scene);
     for (let i = 0; i < 100; i++) particles.emit(event);

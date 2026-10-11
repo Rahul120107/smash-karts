@@ -46,6 +46,7 @@ export class GameAudio {
     this.tyreFilter.frequency.setTargetAtTime(profile?.tyreHz ?? 650, at, 0.09);
   }
   event(event: GameEvent, distance: number) {
+    if (event.kind === 'pickupSpawn') return;
     if (!this.context || !this.master || distance > 55 || this.muted || document.hidden || this.voices.size >= 12) return;
     if (event.kind === 'fire' && (event.weapon === 'shield' || event.weapon === 'boost')) return;
     const ctx = this.context, now = ctx.currentTime;

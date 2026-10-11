@@ -14,9 +14,9 @@ export interface Projectile extends Vec3 {
   radius: number; damage: number; blast: number; expires: number; armedAt: number; target: string | null;
   maxRange?: number; travelled?: number; origin?: Vec3;
 }
-export interface Pickup extends Vec3 { id: number; availableAt: number }
-export type EffectKind = 'fire' | 'explosion' | 'hit' | 'pickup' | 'shield' | 'boost' | 'elimination' | 'impact' | 'collision' | 'respawn';
-export interface GameEvent extends Vec3 { id: number; kind: EffectKind; at: number; player: string; weapon?: WeaponId; radius?: number; target?: string }
+export interface Pickup extends Vec3 { id: number; active: boolean; availableAt: number }
+export type EffectKind = 'fire' | 'explosion' | 'hit' | 'pickup' | 'pickupSpawn' | 'shield' | 'boost' | 'elimination' | 'impact' | 'collision' | 'respawn';
+export interface GameEvent extends Vec3 { id: number; kind: EffectKind; at: number; player: string; weapon?: WeaponId; radius?: number; target?: string; pickupId?: number }
 export interface Snapshot {
   code: string; host: string; phase: 'lobby' | 'playing' | 'finished'; tick: number; time: number;
   remaining: number; duration: number; capacity: number; players: PlayerState[]; projectiles: Projectile[];

@@ -16,7 +16,7 @@ class Peer {
       this.listeners.add(check);
     });
   }
-  async state(predicate: (s: Snapshot) => boolean) { const message = await this.wait(m => m.type === 'snapshot' && predicate(m.state)); return (message as Extract<ServerMessage, { type: 'snapshot' }>).state; }
+  async state(predicate: (s: Snapshot) => boolean, timeout = 5000) { const message = await this.wait(m => m.type === 'snapshot' && predicate(m.state), timeout); return (message as Extract<ServerMessage, { type: 'snapshot' }>).state; }
   static async open(port: number) { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const peer = new Peer(ws); await new Promise<void>((ok, fail) => { ws.once('open', ok); ws.once('error', fail); }); return peer; }
 }
 let server: Awaited<ReturnType<typeof startServer>> | undefined;
@@ -30,6 +30,42 @@ async function setup(duration = 180) {
   return { a, b, idA: welcomeA.id, idB: welcomeB.id, code: welcomeA.code };
 }
 describe('real WebSocket multiplayer integration', () => {
+  it('synchronizes atomic pickup collection, ten-second respawn, and late-join states', async () => {
+    const { a, b, idA, idB, code } = await setup(); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
+    const world = server!.rooms.rooms.get(code)!.simulation, box = world.pickups[0]!;
+    const collector = world.players.get(idA)!, contender = world.players.get(idB)!;
+    world.random = () => 0;
+    Object.assign(collector, { x: box.x - 0.3, y: box.y, z: box.z, vx: 0, vy: 0, vz: 0 });
+    Object.assign(contender, { x: box.x + 0.3, y: box.y, z: box.z, vx: 0, vy: 0, vz: 0 });
+    const collected = (s: Snapshot) => s.pickups[0]!.active === false;
+    const [stateA, stateB] = await Promise.all([a.state(collected), b.state(collected)]);
+    expect(stateA.tick).toBe(stateB.tick); expect(stateA.pickups).toEqual(stateB.pickups);
+    expect(stateA.players.find(p => p.id === idA)).toMatchObject({ weapon: 'machineGun', ammo: 30 });
+    expect(stateB.players.find(p => p.id === idB)!.weapon).toBeNull();
+    const collection = stateB.events.find(e => e.kind === 'pickup' && e.pickupId === box.id)!;
+    expect(stateA.events.filter(e => e.kind === 'pickup')).toEqual([collection]);
+    expect(box.availableAt - collection.at).toBeCloseTo(10, 3);
+    Object.assign(collector, { x: -30, z: 30 }); Object.assign(contender, { x: 30, z: -30 });
+    const late = await Peer.open(server!.port); peers.push(late); late.send({ type: 'join', name: 'Late', code });
+    const lateInactive = await late.state(s => s.phase === 'playing' && s.players.length === 3);
+    expect(lateInactive.pickups).toEqual(stateB.pickups);
+    late.send({ type: 'pickup', pickupId: box.id, weapon: 'rocket' });
+    await late.wait(m => m.type === 'error' && m.message.includes('Unsupported'));
+    expect([...world.players.values()].find(p => p.name === 'Late')!.weapon).toBeNull();
+    const spawned = (s: Snapshot) => s.events.some(e => e.kind === 'pickupSpawn' && e.pickupId === box.id);
+    const states = await Promise.all([a.state(spawned, 15000), b.state(spawned, 15000), late.state(spawned, 15000)]);
+    expect(new Set(states.map(s => s.tick)).size).toBe(1);
+    for (const state of states) {
+      expect(state.pickups[0]).toMatchObject({ id: box.id, active: true, x: box.x, y: box.y, z: box.z });
+      expect(state.events.find(e => e.kind === 'pickupSpawn' && e.pickupId === box.id)!.at - collection.at).toBeCloseTo(10, 3);
+    }
+    const after = await Peer.open(server!.port); peers.push(after); after.send({ type: 'join', name: 'After respawn', code });
+    const lateActive = await after.state(s => s.players.length === 4); expect(lateActive.pickups).toEqual(states[0]!.pickups);
+    const priorDeadline = box.availableAt;
+    Object.assign(contender, { x: box.x, y: box.y, z: box.z });
+    const again = await a.state(s => !s.pickups[0]!.active && s.pickups[0]!.availableAt > priorDeadline + 9);
+    expect(again.players.find(p => p.id === idB)).toMatchObject({ weapon: 'machineGun', ammo: 30 });
+  }, 20000);
   it('broadcasts server-selected machine-gun assistance and rejects client damage/target claims', async () => {
     const { a, b, idA, idB, code } = await setup(); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
     const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, victim = world.players.get(idB)!;

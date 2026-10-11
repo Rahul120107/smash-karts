@@ -29,5 +29,6 @@ export function createPickup(): THREE.Group {
   for (let i = 0; i < 4; i++) { const plane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), face); plane.rotation.y = i * Math.PI / 2; plane.position.set(Math.sin(plane.rotation.y) * 0.581, 0, Math.cos(plane.rotation.y) * 0.581); group.add(plane); }
   batchStatic(group);
   const halo = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.03, 16), new THREE.MeshBasicMaterial({ color: 0xffda6f, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false })); halo.rotation.x = -Math.PI / 2; halo.position.y = -0.6; group.add(halo);
+  halo.name = 'pickup-halo';
   return group;
 }

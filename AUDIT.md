@@ -90,3 +90,13 @@ Room capacity remains configurable to 16 for compatibility, but the audited targ
 - Documentation: `README.md`, `AUDIT.md`, `PROGRESS.md`.
 
 `render.yaml`, runtime dependencies, deployment scripts, and environment contracts are unchanged. The official Blueprint schema check passed with the free backend and free Static Site.
+
+## Pickup collection and respawn follow-up — 2026-10-11
+
+Boxes now carry authoritative `active` state and independent ten-second simulation deadlines. Collection atomically awards the existing random weapon/ammo and marks the box inactive. After 600 ticks it emits one `pickupSpawn` event and becomes collectible at its unchanged spawn point. Inactive boxes grant nothing; replay rebuilds all active spawn states. A waiting empty-slot kart can collect on the same tick as respawning.
+
+Collection and spawn ticks broadcast immediately to every room member. Snapshots retain all pickup locations, active flags and deadlines, allowing late joiners to observe cooldowns and active boxes without relying on event history. Client requests to award a pickup are rejected. The renderer hides boxes on receipt of inactive state; the minimap uses the same state. Collection sparks and glowing spawn motes/rings share the bounded effect pools, and box/halo transforms animate the return without new draw calls or shared-material changes.
+
+Verification: TypeScript and client/server production builds passed; **152 unit/integration tests** passed. New regressions cover contact, exact timing at multiple tick offsets, independent deadlines, all random assignments, cooldown exclusion, contested collection, replay, real-peer synchronization and late joins before/after respawn. **All eleven browser scenarios passed** across the full run and targeted rerun: the first full run's existing idle-render test sampled before an initial resize callback, so the fixture now waits two animation frames before its idle measurement; its rerun passed. The compiled eight-client production smoke also passed. Full combined-command history is recorded in `PROGRESS.md`.
+
+Game damage and physics are unchanged. No Render settings or dependencies changed. Deploy the backend first, then the Static Site, between matches; the latest frontend expects the new pickup state. Hosted Render/two-device acceptance has not been performed for this change.

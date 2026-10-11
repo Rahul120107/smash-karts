@@ -25,6 +25,13 @@ export class Particles {
     p.velocity.set((Math.random() - 0.5) * speed, Math.random() * speed * 0.6, (Math.random() - 0.5) * speed);
   }
   emit(event: GameEvent) {
+    if (event.kind === 'pickupSpawn') {
+      // Original glowing motes and a ground halo reuse the existing bounded pools.
+      for (let i = 0; i < 16; i++) this.add(event, 0xffe79b, 0.09, 0.65, 2.2, -2, 0.3);
+      const ring = this.rings[this.ringIndex++ % this.rings.length]!;
+      Object.assign(ring, { x: event.x, y: groundHeight(event.x, event.z) + 0.05, z: event.z, life: 0.65, size: 2 }); ring.color.setHex(0xffd963);
+      return;
+    }
     if (event.kind === 'fire' && (event.weapon === 'shield' || event.weapon === 'boost' || event.weapon === 'mine')) return;
     const explosive = event.kind === 'explosion' || event.kind === 'elimination';
     const color = explosive ? 0xffad4c : event.kind === 'respawn' || event.kind === 'shield' ? 0x68ddff : event.kind === 'pickup' ? 0xffd963 : event.kind === 'boost' ? 0x64ffcf : 0xfff1b5;

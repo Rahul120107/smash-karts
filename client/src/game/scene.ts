@@ -11,6 +11,7 @@ import { Controls } from './input.js';
 import { buildArena } from '../maps/arena.js';
 import { createKart, type KartVisual } from '../vehicles/kart.js';
 import { createPickup, createProjectile } from '../weapons/visuals.js';
+import { updatePickupVisual } from '../weapons/pickup-visual.js';
 import { Particles } from '../effects/particles.js';
 import { GameAudio } from '../effects/audio.js';
 
@@ -81,7 +82,10 @@ export class ArenaGame {
     for (const player of state.players) if (!this.karts.has(player.id)) {
       const visual = createKart(player.color, player.name); visual.group.position.set(player.x, player.y, player.z); visual.group.rotation.y = player.yaw; this.scene.add(visual.group); this.karts.set(player.id, visual); this.renderer.shadowMap.needsUpdate = true; this.idleDirty = true;
     }
-    for (const box of state.pickups) if (!this.pickups.has(box.id)) { const visual = this.pickupTemplate.clone(); this.scene.add(visual); this.pickups.set(box.id, visual); }
+    for (const box of state.pickups) {
+      if (!this.pickups.has(box.id)) { const visual = this.pickupTemplate.clone(); this.scene.add(visual); this.pickups.set(box.id, visual); }
+      updatePickupVisual(this.pickups.get(box.id)!, box, state.phase === 'playing', state.time, performance.now());
+    }
     const activeProjectiles = new Set(state.projectiles.map(p => p.id));
     for (const [key, visual] of this.projectiles) if (!activeProjectiles.has(key)) { this.scene.remove(visual); this.projectiles.delete(key); }
     for (const p of state.projectiles) if (!this.projectiles.has(p.id)) {
@@ -128,8 +132,7 @@ export class ArenaGame {
     if (state) {
       for (const p of state.players) this.renderKart(p, id, now, delta, state);
       for (const box of state.pickups) {
-        const visual = this.pickups.get(box.id)!; visual.visible = state.phase === 'playing' && box.availableAt <= state.time;
-        visual.position.set(box.x, box.y + 1 + Math.sin(now / 380 + box.id) * 0.15, box.z); visual.rotation.y = now / 1100 + box.id;
+        updatePickupVisual(this.pickups.get(box.id)!, box, state.phase === 'playing', state.time, now);
       }
       const extrapolation = Math.min(0.1, (now - this.lastFrame) / 1000);
       for (const p of state.projectiles) {

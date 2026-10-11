@@ -17,7 +17,7 @@ export class Simulation implements CombatWorld {
   constructor(public duration: number = CONFIG.matchDuration, public random: () => number = Math.random) { this.resetPickups(); }
   nextProjectileId() { return ++this.projectileId; }
   emit(event: Omit<GameEvent, 'id' | 'at'>) { this.events.push({ ...event, id: ++this.eventId, at: this.time }); }
-  private resetPickups() { this.pickups = PICKUP_POSITIONS.map((p, id) => ({ ...p, id, availableAt: 0 })); }
+  private resetPickups() { this.pickups = PICKUP_POSITIONS.map((p, id) => ({ ...p, id, active: true, availableAt: 0 })); }
   addPlayer(id: string, name: string): PlayerState {
     const p: PlayerState = { id, name, color: COLORS[this.players.size % COLORS.length]!, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0,
       health: CONFIG.maxHealth, score: 0, deaths: 0, weapon: null, ammo: 0, nextFire: 0, shieldUntil: 0, boostUntil: 0, invulnerableUntil: 0, respawnAt: 0, ack: 0 };

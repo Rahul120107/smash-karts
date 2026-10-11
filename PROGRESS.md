@@ -56,3 +56,9 @@
 - Final dependency audit: zero vulnerabilities. No Render deployment or real WAN/GPU acceptance claim is made.
 - Exact `npm run start:server` command passed a production-env health/backend-only HTTP smoke check. Restored `npm run dev`; frontend is available at localhost:5173 with backend health at localhost:3001/health.
 - Updated README with GitHub preparation, Blueprint/manual Render steps, environment variables, two-device acceptance testing, and troubleshooting. Full findings/file list in AUDIT.md.
+
+## Free Render plan update — 2026-10-11
+- Changed backend Blueprint compute plan to `free`; frontend remains a free Static Site with no compute-plan field.
+- Verified the complete Blueprint against Render's current official JSON schema and compared its parsed contents with the prior configuration: only the backend plan changed.
+- Rechecked 99 unit/integration tests and the compiled eight-client production multiplayer smoke test; all passed. Gameplay source and other service settings were preserved.
+- Updated README for free-service idle spin-down/cold starts. Actual Render deployment and performance on the free compute plan remain unverified.

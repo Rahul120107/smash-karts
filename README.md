@@ -26,7 +26,9 @@ Open **http://localhost:3001**. With `SERVE_CLIENT=true` (default), this process
 
 ## Deploy to Render
 
-The existing stack is preserved: a React/Vite Static Site and one Node Web Service. The Web Service owns every room and all gameplay state in memory. Use one instance, with autoscaling disabled. Choose a region close to the players. An always-on backend is preferable for live rooms; the Blueprint selects Render's `0.5c-512mb` compute plan, which is paid. No cloud resources have been created by this repository work. See Render's current [Blueprint specification](https://render.com/docs/blueprint-spec).
+The existing stack is preserved: a React/Vite Static Site and one Node Web Service. The Web Service owns every room and all gameplay state in memory. Use one instance, with autoscaling disabled. Choose a region close to the players. The Blueprint selects backend `plan: free` and retains the free Static Site (`runtime: static`, with no compute-plan field). No cloud resources have been created by this repository work. See Render's current [Blueprint specification](https://render.com/docs/blueprint-spec).
+
+Free backends spin down after 15 minutes without inbound HTTP requests or WebSocket messages and can take about a minute to wake on the next connection. Existing client heartbeats/retries remain enabled. A process restart discards in-memory rooms and scores. Actual multiplayer performance on Render's free compute plan still requires hosted testing. See [Render's free hosting behavior](https://render.com/docs/free).
 
 Prepare GitHub:
 

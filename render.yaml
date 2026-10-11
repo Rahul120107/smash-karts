@@ -3,7 +3,7 @@ services:
   - type: web
     name: crossfire-karts-server
     runtime: node
-    plan: 0.5c-512mb
+    plan: free
     numInstances: 1
     autoDeployTrigger: "off"
     buildCommand: npm ci --include=dev && npm run build:server

@@ -45,13 +45,13 @@ describe('continuous WebAudio lifecycle', () => {
     const { audio, context } = setup(), effect = { id: 1, at: 0, x: 0, y: 0, z: 0, player: 'a', kind: 'fire' as const };
     audio.event({ ...effect, weapon: 'cannon' }, 0); audio.event({ ...effect, id: 2, weapon: 'machineGun' }, 0);
     expect(context.oscillators[3]!.type).toBe('triangle'); expect(context.oscillators[4]!.type).toBe('square');
-    expect(context.sources).toHaveLength(4); expect(audio.activeVoices).toBe(2); audio.dispose();
+    expect(context.sources).toHaveLength(3); expect(audio.activeVoices).toBe(2); audio.dispose();
   });
   it('starts the engine and tyre loops once, then changes gains rather than restarting sources', () => {
     const { audio, context, target } = setup(), { a } = duel();
     target.dispatchEvent(new Event('keydown')); target.dispatchEvent(new Event('pointerdown'));
     for (let i = 0; i < 200; i++) audio.update(a, { ...a, vx: 6, vz: 18 }, true, 1 / 60);
-    expect(Context.instances).toHaveLength(1); expect(context.oscillators).toHaveLength(3); expect(context.sources).toHaveLength(3);
+    expect(Context.instances).toHaveLength(1); expect(context.oscillators).toHaveLength(3); expect(context.sources).toHaveLength(2);
     for (const source of [...context.oscillators, ...context.sources]) expect(source.start).toHaveBeenCalledTimes(1);
     expect(context.sources[0]!.loop).toBe(true); expect(context.gains[3]!.gain.value).toBeGreaterThan(0);
     audio.update(a, { ...a, vx: 0, vz: 18 }, true, 1 / 60); expect(context.gains[3]!.gain.value).toBe(0);
@@ -78,11 +78,11 @@ describe('continuous WebAudio lifecycle', () => {
   it('gates spatial ambience when inactive or hidden and keeps loops bounded', () => {
     const {audio, context}=setup(),{a}=duel();
     audio.update(a,{...a,x:54,z:-12},true,1/60);
-    expect(context.gains[4]!.gain.value).toBeGreaterThan(0);expect(context.gains[5]!.gain.value).toBeGreaterThan(0);
-    const close=context.gains[5]!.gain.value;
-    audio.update(a,{...a,x:-50,z:50},true,1/60);expect(context.gains[5]!.gain.value).toBeLessThan(close);
+    expect(context.gains[4]!.gain.value).toBeGreaterThan(0);
+    const close=context.gains[4]!.gain.value;
+    audio.update(a,{...a,x:0,z:0},true,1/60);expect(context.gains[4]!.gain.value).toBeLessThan(close);
     vi.stubGlobal('document',{hidden:true});audio.update(a,a,true,1/60);
-    expect(context.gains[4]!.gain.value).toBe(0);expect(context.gains[5]!.gain.value).toBe(0);expect(context.gains[6]!.gain.value).toBe(0);
-    expect(context.sources).toHaveLength(3);audio.dispose();
+    expect(context.gains[4]!.gain.value).toBe(0);expect(context.gains[5]!.gain.value).toBe(0);
+    expect(context.sources).toHaveLength(2);audio.dispose();
   });
 });

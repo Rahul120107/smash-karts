@@ -9,6 +9,7 @@ import type { CombatWorld } from './world.js';
 import { machineGunAim } from '../../../shared/src/aim.js';
 import { stepContactAttacks } from '../combat/contact.js';
 import { matchWinners } from '../../../shared/src/match.js';
+import { stepLavaHazard } from './hazards.js';
 
 interface Controls { queue: Input[]; last: Input; lastReceived: number; highest: number; fireDown: boolean; pressed: boolean }
 export class Simulation implements CombatWorld {
@@ -78,8 +79,9 @@ export class Simulation implements CombatWorld {
       const a = alive[i]!, b = alive[j]!, impact = collideKarts(a, b);
       if (pass === 0 && impact > 4) this.emit({ kind: 'collision', player: a.id, target: b.id, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 0.4, z: (a.z + b.z) / 2, radius: impact });
     }
+    stepLavaHazard(this);
     // Aim uses every kart's current tick position, after movement/contact resolution.
-    for (const p of alive) {
+    for (const p of alive.filter(k => k.health > 0)) {
       p.aimTarget = p.weapon === 'machineGun' ? machineGunAim(p, alive, this.time).target?.id ?? null : null;
       const c = this.controls.get(p.id)!;
       if (this.time - c.lastReceived <= CONFIG.inputTimeout && c.pressed) this.attacks.begin(this, p);

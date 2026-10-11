@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG, DT } from '../shared/src/config.js';
-import { ARENA_SIZE, groundHeight } from '../shared/src/arena.js';
+import { ARENA_SIZE, groundHeight, RAMPS } from '../shared/src/arena.js';
 import { collideKarts, moveKart, NEUTRAL, resolveWalls } from '../shared/src/movement.js';
 import { segmentBox, segmentSphere } from '../shared/src/math.js';
-const kart = () => ({ x: -8, y: 0, z: -20, yaw: 0, vx: 0, vy: 0, vz: 0 });
+const kart = () => ({ x: -12, y: 0, z: -20, yaw: 0, vx: 0, vy: 0, vz: 0 });
 describe('shared kart dynamics', () => {
   it('accelerates, respects maximum speed, brakes, reverses, and coasts to rest', () => {
     const k = kart();
@@ -22,19 +22,19 @@ describe('shared kart dynamics', () => {
   });
   it('prevents wall penetration, including centers inside an obstacle', () => {
     const k = { ...kart(), x: ARENA_SIZE / 2 - 1.2, z: 25, vx: 20 }; resolveWalls(k);
-    expect(k.x).toBeLessThanOrEqual(ARENA_SIZE / 2 - 1 - CONFIG.kartRadius);
+    expect(k.x).toBeLessThanOrEqual(ARENA_SIZE / 2 - 1 - CONFIG.kartRadius + 1e-8);
     expect(k.vx).toBeLessThanOrEqual(0);
-    const inside = { ...kart(), x: 0, z: 0 }; resolveWalls(inside);
-    expect(Math.max(Math.abs(inside.x), Math.abs(inside.z))).toBeGreaterThanOrEqual(2.5 + CONFIG.kartRadius);
+    const inside = { ...kart(), x: 15, z: 22 }; resolveWalls(inside);
+    expect(Math.abs(inside.z-22)).toBeGreaterThanOrEqual(.6 + CONFIG.kartRadius - 1e-8);
   });
   it('separates karts and exchanges collision momentum', () => {
-    const a = { ...kart(), x: -8, vx: 10 }, b = { ...kart(), x: -7, vx: 0 }; collideKarts(a, b);
+    const a = { ...kart(), x: -12, vx: 10 }, b = { ...kart(), x: -11, vx: 0 }; collideKarts(a, b);
     expect(b.x - a.x).toBeCloseTo(CONFIG.kartRadius * 2); expect(b.vx).toBeGreaterThan(0); expect(a.vx).toBeLessThan(10);
   });
   it('follows ramps, becomes airborne, and lands without sinking', () => {
-    const k = { ...kart(), x: -23, z: -10 }; let peak = 0, airborne = false;
-    for (let i = 0; i < 100; i++) { moveKart(k, { ...NEUTRAL, throttle: 1 }); peak = Math.max(peak, k.y); airborne ||= k.y > groundHeight(k.x, k.z) + 0.1; expect(k.y).toBeGreaterThanOrEqual(groundHeight(k.x, k.z) - 0.001); }
-    expect(peak).toBeGreaterThan(2); expect(airborne).toBe(true);
+    const k = { ...kart(), x: -40, z: 35, y: groundHeight(-40,35), vz: CONFIG.maxSpeed }; let peak = 0, airborne = false;
+    for (let i = 0; i < 180; i++) { moveKart(k, { ...NEUTRAL, throttle: 1 }); peak = Math.max(peak, k.y); airborne ||= k.y > groundHeight(k.x, k.z) + 0.1; expect(k.y).toBeGreaterThanOrEqual(groundHeight(k.x, k.z) - 0.001); }
+    expect(peak).toBeGreaterThan(RAMPS[6]!.height); expect(airborne).toBe(true);
     for (let i = 0; i < 200; i++) moveKart(k, NEUTRAL); expect(k.y).toBeCloseTo(groundHeight(k.x, k.z));
   });
   it('uses identical prediction and authoritative trajectories for identical commands', () => {

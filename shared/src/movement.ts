@@ -1,5 +1,5 @@
 import { CONFIG, DT } from './config.js';
-import { ARENA_SIZE, groundHeight, rampHeight, RAMPS, WALLS } from './arena.js';
+import { arenaClamp, groundHeight, rampHeight, rampHalfWidth, RAMPS, WALLS, toLocal, toWorld } from './arena.js';
 import { clamp } from './math.js';
 import type { Input, KartState } from './types.js';
 export const NEUTRAL: Input = { seq: 0, throttle: 0, steer: 0, fire: false, drift: false };
@@ -17,7 +17,7 @@ export function moveKart(k: KartState, input: Input, boosted = false, dt = DT): 
 
 function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number): number {
   resolveCeilings(k);
-  const oldX = k.x, oldZ = k.z, oldGround = groundHeight(k.x, k.z);
+  const oldX = k.x, oldY = k.y, oldZ = k.z, oldGround = groundHeight(k.x, k.z);
   const grounded = k.y <= oldGround + CONFIG.groundTolerance && k.vy <= CONFIG.groundTolerance;
   const fx = Math.sin(k.yaw), fz = Math.cos(k.yaw);
   let forward = k.vx * fx + k.vz * fz;
@@ -51,7 +51,7 @@ function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number)
   limitHorizontalVelocity(k);
   k.x += k.vx * dt; k.z += k.vz * dt;
   const contactSpeed = Math.hypot(k.vx, k.vz);
-  resolveWalls(k); resolveRampSides(k);
+  resolveWalls(k); resolveRampSides(k, { x: oldX, y: oldY, z: oldZ });
   const impact = Math.max(0, contactSpeed - Math.hypot(k.vx, k.vz));
   const ground = groundHeight(k.x, k.z);
   // Supported motion never stores suspension/slope correction as ballistic velocity.
@@ -61,7 +61,8 @@ function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number)
   // A step straddling the triangular crest can average its rise to almost zero.
   // Retain the preceding approach grade so launch strength doesn't depend on tick alignment.
   const previousRise = Math.max(oldGround - previousGround, previousGround - earlierGround);
-  const crest = grounded && oldGround > 0.1 && previousRise > 0.002 && ground < oldGround && Math.hypot(k.vx, k.vz) >= CONFIG.rampJumpSpeed;
+  // Small painted curbs are traversable steps, never launch ramps.
+  const crest = grounded && oldGround > CONFIG.maxStepHeight && previousRise > 0.002 && ground <= oldGround + 1e-9 && Math.hypot(k.vx, k.vz) >= CONFIG.rampJumpSpeed;
   if (crest) {
     k.vy = clamp(previousRise / dt * 0.85, 0, CONFIG.maxJumpVelocity);
     k.y += k.vy * dt;
@@ -80,8 +81,8 @@ function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number)
 export function resolveCeilings(k: KartState) {
   for (const wall of WALLS) {
     const base = wall.base ?? 0;
-    if (!base || wall.style !== 'tunnel' || k.y >= base || k.y + CONFIG.kartHeight <= base) continue;
-    if (Math.abs(k.x - wall.x) > wall.width / 2 + CONFIG.kartRadius || Math.abs(k.z - wall.z) > wall.depth / 2 + CONFIG.kartRadius) continue;
+    if (!base || k.y >= base || k.y + CONFIG.kartHeight <= base) continue;
+    if (Math.abs(toLocal(k.x, k.z, wall).x) > wall.width / 2 + CONFIG.kartRadius || Math.abs(toLocal(k.x, k.z, wall).z) > wall.depth / 2 + CONFIG.kartRadius) continue;
     k.y = Math.max(groundHeight(k.x, k.z), base - CONFIG.kartHeight); k.vy = Math.min(0, k.vy);
   }
 }
@@ -92,28 +93,41 @@ function limitHorizontalVelocity(k: KartState) {
 }
 
 /** Vertical ramp faces are contacts, not instantly climbable heightfield steps. */
-export function resolveRampSides(k: KartState) {
+export function resolveRampSides(k: KartState, previous?: { x: number; y: number; z: number }) {
   for (const r of RAMPS) {
-    const dz = Math.abs(k.z - r.z);
-    if (dz >= r.depth / 2) continue;
-    const height = rampHeight(r, k.z);
-    if (k.y + CONFIG.maxStepHeight >= height || Math.abs(k.x - r.x) >= r.width / 2 + CONFIG.kartRadius) continue;
-    const normal = k.x < r.x ? -1 : 1;
-    k.x = r.x + normal * (r.width / 2 + CONFIG.kartRadius);
-    if (k.vx * normal < 0) k.vx -= (1 + CONFIG.wallRestitution) * k.vx;
+    const local = toLocal(k.x, k.z, r);
+    if (Math.abs(local.z) >= r.depth / 2) continue;
+    const height = rampHeight(r, local.z + r.z);
+    if (previous) {
+      const before=toLocal(previous.x,previous.z,r);
+      const supported=Math.abs(before.z)<r.depth/2 && Math.abs(before.x)<rampHalfWidth(r,before.z) && previous.y>=rampHeight(r,before.z+r.z)-CONFIG.groundTolerance;
+      const enteredMouth=Math.abs(before.z)>=r.depth/2 && Math.abs(before.x)<(r.endWidth??r.width)/2;
+      // Side-contact rejection must not mistake legitimate steep forward ascent for a wall.
+      if(supported||enteredMouth)continue;
+    }
+    const halfWidth=rampHalfWidth(r,local.z), plateau=(r.plateau??0)/2;
+    const slope=Math.abs(local.z)>plateau ? ((r.endWidth??r.width)-r.width)/2/(r.depth/2-plateau)*Math.sign(local.z) : 0;
+    const length=Math.hypot(1,slope), distance=(Math.abs(local.x)-halfWidth)/length;
+    if (k.y + CONFIG.maxStepHeight >= height || distance >= CONFIG.kartRadius) continue;
+    const nx=(local.x<0?-1:1)/length,nz=-slope/length,c=Math.cos(r.yaw??0),s=Math.sin(r.yaw??0);
+    Object.assign(k,toWorld(local.x+nx*(CONFIG.kartRadius-distance),local.z+nz*(CONFIG.kartRadius-distance),r));
+    const worldX=nx*c+nz*s,worldZ=-nx*s+nz*c,into=k.vx*worldX+k.vz*worldZ;
+    if(into<0){k.vx-=(1+CONFIG.wallRestitution)*into*worldX;k.vz-=(1+CONFIG.wallRestitution)*into*worldZ;}
   }
 }
 
 /** Recover corrupted/stuck states identically on client and server, without freezing real jumps. */
 export function recoverKart(k: KartState) {
-  const boundary = ARENA_SIZE / 2 - 1 - CONFIG.kartRadius;
   if (!Number.isFinite(k.x)) k.x = -8;
   if (!Number.isFinite(k.z)) k.z = 18;
   if (!Number.isFinite(k.yaw)) k.yaw = 0;
   k.yawRate = Number.isFinite(k.yawRate) ? clamp(k.yawRate!, -CONFIG.maxYawRate, CONFIG.maxYawRate) : 0;
-  for (const axis of ['x', 'z'] as const) {
-    const velocity = axis === 'x' ? 'vx' : 'vz';
-    if (Math.abs(k[axis]) > boundary) { k[axis] = clamp(k[axis], -boundary, boundary); if (k[axis] * k[velocity] > 0) k[velocity] = 0; }
+  const bounded = arenaClamp(k.x, k.z, 1 + CONFIG.kartRadius);
+  if (bounded.x !== k.x || bounded.z !== k.z) {
+    const dx = k.x - bounded.x, dz = k.z - bounded.z, length = Math.hypot(dx, dz), nx = dx / length, nz = dz / length;
+    const outward = k.vx * nx + k.vz * nz;
+    if (outward > 0) { k.vx -= outward * nx; k.vz -= outward * nz; }
+    k.x = bounded.x; k.z = bounded.z;
   }
   for (const axis of ['vx', 'vy', 'vz'] as const) if (!Number.isFinite(k[axis])) k[axis] = 0;
   if (!Number.isFinite(k.y) || k.y < -2 || k.y > CONFIG.recoveryHeight) { k.y = groundHeight(k.x, k.z); k.vy = 0; }
@@ -133,17 +147,20 @@ export function drivingTelemetry(k: KartState) {
 export function resolveWalls(k: KartState): void {
   for (const w of WALLS) {
     const base = w.base ?? 0;
-    if (k.y >= base + w.height || k.y + CONFIG.kartHeight <= base || base > 0 && w.style === 'tunnel' && k.y < base) continue;
-    const minX = w.x - w.width / 2, maxX = w.x + w.width / 2;
-    const minZ = w.z - w.depth / 2, maxZ = w.z + w.depth / 2;
-    const cx = clamp(k.x, minX, maxX), cz = clamp(k.z, minZ, maxZ);
-    let dx = k.x - cx, dz = k.z - cz, d = Math.hypot(dx, dz);
+    if (k.y >= base + w.height || k.y + CONFIG.kartHeight <= base) continue;
+    const local = toLocal(k.x, k.z, w);
+    const minX = -w.width / 2, maxX = w.width / 2, minZ = -w.depth / 2, maxZ = w.depth / 2;
+    const cx = clamp(local.x, minX, maxX), cz = clamp(local.z, minZ, maxZ);
+    let dx = local.x - cx, dz = local.z - cz, d = Math.hypot(dx, dz);
     if (d >= CONFIG.kartRadius) continue;
     if (d < 1e-8) {
-      const sides = [{ v: k.x - minX, x: -1, z: 0 }, { v: maxX - k.x, x: 1, z: 0 }, { v: k.z - minZ, x: 0, z: -1 }, { v: maxZ - k.z, x: 0, z: 1 }].sort((a, b) => a.v - b.v);
+      const sides = [{ v: local.x - minX, x: -1, z: 0 }, { v: maxX - local.x, x: 1, z: 0 }, { v: local.z - minZ, x: 0, z: -1 }, { v: maxZ - local.z, x: 0, z: 1 }].sort((a, b) => a.v - b.v);
       const side = sides[0]!; dx = side.x; dz = side.z;
-      k.x += dx * (side.v + CONFIG.kartRadius); k.z += dz * (side.v + CONFIG.kartRadius); d = 1;
-    } else { dx /= d; dz /= d; k.x += dx * (CONFIG.kartRadius - d); k.z += dz * (CONFIG.kartRadius - d); }
+      local.x += dx * (side.v + CONFIG.kartRadius); local.z += dz * (side.v + CONFIG.kartRadius); d = 1;
+    } else { dx /= d; dz /= d; local.x += dx * (CONFIG.kartRadius - d); local.z += dz * (CONFIG.kartRadius - d); }
+    Object.assign(k, toWorld(local.x, local.z, w));
+    const c = Math.cos(w.yaw ?? 0), s = Math.sin(w.yaw ?? 0), localNormalX = dx;
+    dx = localNormalX * c + dz * s; dz = -localNormalX * s + dz * c;
     const into = k.vx * dx + k.vz * dz;
     if (into < 0) { k.vx -= dx * into * (1 + CONFIG.wallRestitution); k.vz -= dz * into * (1 + CONFIG.wallRestitution); }
   }

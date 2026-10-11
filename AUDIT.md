@@ -2,6 +2,24 @@
 
 Latest audit: 2026-10-12; earlier release evidence below is dated 2026-10-11. Existing React/Vite/Three.js/Node/ws TypeScript monorepo preserved. No database, accounts, progression, cosmetics, or extra modes added.
 
+## Symmetrical island reconstruction ? 2026-10-12
+
+This section supersedes the Sunbreak map evidence below. The supplied attachment was unavailable. Inspected publisher screenshots and a clearly labeled secondary community overview, without bypassing the restricted wiki page or downloading proprietary assets. Created a top-down sketch before coding; final shared-coordinate plan, assumptions, reference comparison and manual review steps are in [the reconstruction report](docs/island-reconstruction.md).
+
+Replaced the old forest/bridge/tunnel map with a 112-unit rounded arena: central 16-unit square lava opening, red-white 12 cm curb, four mirrored colored beveled L barriers, four purple raised perimeter routes, four tapered corner pads, eight crossings, 28 pickups and eight safe spawns. All 64 oriented wall boxes and eight rotated/tapered profiles are shared by rendering, kart movement/prediction, projectiles, aiming and camera clipping. Old obstacle geometry and waterfall ambience were removed. No unrelated gameplay mode, weapon balance, dependency, account or deployment change.
+
+Confirmed fixes: forward high-speed ascent was incorrectly rejected by side-contact logic; previous-footprint support now distinguishes ascent from side entry. Crest launching includes flat plateau transitions while excluding low painted curbs. Initial pickup routes were redirected away from lava after a real browser lifecycle failure. Environmental elimination clears combat state, awards no score and synchronizes through the existing respawn system; airborne pit crossings remain safe. Owner immunity and independent ten-second pickup clocks are unchanged.
+
+Final `npm run check`: TypeScript and both production builds passed; **286 tests / 18 files**, **13 Chromium scenarios in 5.2 minutes**, compiled eight-client production smoke passed. Added geometry/mirror/OBB, boosted ramp-mouth, safe-route, curb, lava/late-join/respawn and full 180-second eight-player regressions. Existing twelve-weapon, self-immunity, pickup, latency, reconnect, match/replay and HTTPS/WSS checks remain covered. A final TypeScript pass also checked the screenshot/SVG capture tool. Windows shutdown handler testing uses IPC, not actual Linux signals.
+
+Inspected local [top-down](docs/map-review/top-down.png), [overview](docs/map-review/overview.png) and [third-person](docs/map-review/third-person.png) captures. Refined blocky shoulders into tapered outlines and beveled elbows. No exact match claim: proportions, pickup coordinates, ramp entrances and lava policy are inferred; full reference pedestal decoration and exact closed-platform entry geometry remain unresolved.
+
+Final Iris Xe D3D11 sample: **60.06 FPS**, **16.65 ms mean / 16.70 ms p95**, **61 sampled draws / 18,918 triangles**, full quality at 1920x1080; Windows i5-1334U/15.7 GiB, one rendered browser plus seven native peers, six-second warmup/five-second sample, no renderer errors. SwiftShader single browser: **8.68 FPS**, **115.21 / 200 ms** mean/p95, **39 draws / 13,086 triangles**. Eight SwiftShader browsers: **3 FPS each**, **35-81 draws**, **12,528-18,518 triangles**, maximum frame gaps **450-500 ms**. Software results do not meet performance targets. These are local samples, not sustained whole-map, worst-case combat, eight-device or Render measurements.
+
+Final synthetic 180-second/eight-player match completed: **1,297 ms**, **0.280 ms p95** tick/snapshot, **24** peak projectiles, **7,712-byte** mean snapshots, **1,205 KiB/s** estimated room payload and **3** eliminations. TypeScript checking ran concurrently; no browser/profiler was running. Raw samples: [performance report](docs/performance-island-reconstruction.json).
+
+Render Free YAML and package/runtime configuration are unchanged. Local compiled production, origin/URL validation and separate HTTPS/WSS checks passed. No live deployment/settings changed; deployment and remote-device acceptance remain unverified. Both services must be manually deployed from the same commit and clients reloaded. Subjective handling/audio and broader hardware performance require human playtesting.
+
 ## Reference-informed Free For All release — 2026-10-12
 
 Reviewed public Tall Team publisher descriptions and inspected the official game's rendered menu. The Create-button attempt remained on that menu. Exact driving telemetry, live Smash Island geometry, aim algorithms, weapon timing and sounds were not measured. [Reference findings](docs/reference-gameplay.md) distinguish published categories/counts/rules from independently chosen balance and retained original extensions.

@@ -31,11 +31,23 @@ async function setup(duration = 180) {
   return { a, b, idA: welcomeA.id, idB: welcomeB.id, code: welcomeA.code };
 }
 describe('real WebSocket multiplayer integration', () => {
+  it('synchronizes a lava death, late-join state and normal respawn without awarding a kill', async () => {
+    const { a, b, idA, code } = await setup(12); a.send({ type: 'start' }); await b.state(s=>s.phase==='playing');
+    const world=server!.rooms.rooms.get(code)!.simulation, victim=world.players.get(idA)!;
+    Object.assign(victim,{x:0,z:0,y:-.7,vx:0,vy:0,vz:0});
+    const dead=await a.state(s=>s.players.some(p=>p.id===idA&&p.health===0));
+    const mirrored=await b.state(s=>s.players.some(p=>p.id===idA&&p.health===0));
+    expect(dead.players.every(p=>p.score===0)).toBe(true);expect(mirrored.players.find(p=>p.id===idA)!.deaths).toBe(1);
+    const late=await Peer.open(server!.port);peers.push(late);late.send({type:'join',code,name:'Late lava witness'});
+    const state=await late.state(s=>s.players.some(p=>p.id===idA&&p.health===0));expect(state.pickups).toEqual(mirrored.pickups);
+    const respawn=await late.state(s=>s.time>dead.time&&s.players.some(p=>p.id===idA&&p.health===100));
+    const player=respawn.players.find(p=>p.id===idA)!;expect(player.respawnAt).toBe(0);expect(player.deaths).toBe(1);expect(player.score).toBe(0);
+  });
   it.each(['bullets', 'blastMissile', 'orbit', 'shield'] as const)('synchronizes server-owned %s activation, damage and remaining inventory', async weapon => {
     const { a, b, idA, idB, code } = await setup(12); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
     const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, target = world.players.get(idB)!;
-    Object.assign(shooter, { x: -8, y: 0, z: 0, yaw: 0, invulnerableUntil: 0 });
-    Object.assign(target, { x: -8, y: 0, z: weapon === 'orbit' || weapon === 'shield' ? 1.8 : 6, invulnerableUntil: 0 });
+    Object.assign(shooter, { x: -12, y: 0, z: 0, yaw: 0, invulnerableUntil: 0 });
+    Object.assign(target, { x: -12, y: 0, z: weapon === 'orbit' || weapon === 'shield' ? 1.8 : 6, invulnerableUntil: 0 });
     equip(shooter, weapon); const since = world.time;
     a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2 }] });
     const hit = (s: Snapshot) => s.time > since && s.events.some(e => e.kind === 'hit' && e.player === idA && e.target === idB);
@@ -56,7 +68,7 @@ describe('real WebSocket multiplayer integration', () => {
   it('does not spend rocket inventory automatically or repeat a held key over WebSockets', async () => {
     const { a, b, idA, idB, code } = await setup(12); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
     const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, target = world.players.get(idB)!;
-    Object.assign(shooter, { x: -8, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(target, { x: 30, z: 45 }); equip(shooter, 'rocket');
+    Object.assign(shooter, { x: -12, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(target, { x: 30, z: 45 }); equip(shooter, 'rocket');
     const since = world.time;
     a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 1, fire: true }] });
     const states = await Promise.all([a.state(s => s.time > since + 1), b.state(s => s.time > since + 1)]);
@@ -68,7 +80,7 @@ describe('real WebSocket multiplayer integration', () => {
   it('synchronizes a full assisted machine-gun attack after one press and immediate release', async () => {
     const { a, b, idA, idB, code } = await setup(12); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
     const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, target = world.players.get(idB)!;
-    Object.assign(shooter, { x: -8, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(target, { x: -7, z: 10, invulnerableUntil: 0 });
+    Object.assign(shooter, { x: -12, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(target, { x: -11, z: 10, invulnerableUntil: 0 });
     world.random = () => 0.5; equip(shooter, 'machineGun');
     a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2 }] });
     await b.state(s => s.players.find(p => p.id === idA)?.attacking === true);
@@ -120,7 +132,7 @@ describe('real WebSocket multiplayer integration', () => {
     const { a, b, idA, idB, code } = await setup(); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
     const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, victim = world.players.get(idB)!;
     world.random = () => 0.5;
-    Object.assign(shooter, { x: -8, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(victim, { x: -6.4, z: 8, invulnerableUntil: 0 }); equip(shooter, 'machineGun');
+    Object.assign(shooter, { x: -12, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(victim, { x: -10.4, z: 8, invulnerableUntil: 0 }); equip(shooter, 'machineGun');
     const lock = await b.state(s => s.players.find(p => p.id === idA)?.aimTarget === idB); expect(lock.players.find(p => p.id === idB)!.health).toBe(100);
     a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 1, fire: true, target: 'forged', damage: 10000 }] });
     const hit = (s: Snapshot) => (s.players.find(p => p.id === idB)?.health ?? 100) < 100;
@@ -193,7 +205,7 @@ describe('real WebSocket multiplayer integration', () => {
     b.send({ type: 'eliminate', target: idA }); await b.wait(m => m.type === 'error' && m.message.includes('Unsupported'));
     a.send({ type: 'input', commands: Array.from({ length: 6 }, (_, i) => ({ ...NEUTRAL, seq: i + 1, throttle: 1 })) });
     const moved = await b.state(s => (s.players.find(p => p.id === idA)?.ack ?? 0) >= 6);
-    expect(moved.players.find(p => p.id === idA)!.z).toBeLessThan(27); expect(moved.players.find(p => p.id === idA)!.health).toBe(100);
+    expect(moved.players.find(p => p.id === idA)!.x).toBeLessThan(-4); expect(moved.players.find(p => p.id === idA)!.health).toBe(100);
     a.ws.close(); await b.state(s => s.players.length === 1 && s.host === idB); expect(server!.rooms.memberships.has(idA)).toBe(false);
     b.send({ type: 'leave' }); await b.wait(m => m.type === 'left'); expect(server!.rooms.rooms.size).toBe(0);
   });
@@ -203,7 +215,7 @@ describe('real WebSocket multiplayer integration', () => {
     // Fixture access is local to this test; there is no weapon/position cheat in the public protocol.
     const world = server!.rooms.rooms.get(code)!.simulation;
     const shooter = world.players.get(idA)!, victim = world.players.get(idB)!;
-    Object.assign(shooter, { x: -8, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(victim, { x: -8, z: 6, invulnerableUntil: 0 }); equip(shooter, 'machineGun');
+    Object.assign(shooter, { x: -12, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(victim, { x: -12, z: 6, invulnerableUntil: 0 }); equip(shooter, 'machineGun');
     let seq = 0;
     const fire = setInterval(() => a.send({ type: 'input', commands: Array.from({ length: 3 }, () => ({ ...NEUTRAL, seq: ++seq, fire: true })) }), 50);
     try {

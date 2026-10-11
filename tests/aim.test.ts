@@ -10,20 +10,20 @@ import { advance, duel, equip } from './helpers.js';
 
 describe('server machine-gun aim assistance', () => {
   it('prefers the forward aiming direction over a closer off-axis opponent', () => {
-    const { world, a, b } = duel(); Object.assign(b, { x: -5, z: 10 });
-    const c = world.addPlayer('c', 'Center'); Object.assign(c, { x: -8, z: 22, invulnerableUntil: 0 });
+    const { world, a, b } = duel(); Object.assign(b, { x: -9, z: 10 });
+    const c = world.addPlayer('c', 'Center'); Object.assign(c, { x: -12, z: 18, invulnerableUntil: 0 });
     expect(machineGunAim(a, world.players.values()).target?.id).toBe(c.id);
   });
   it('rejects dead, protected, behind, out-of-cone and out-of-range candidates', () => {
     const { world, a, b } = duel();
-    for (const values of [{ health: 0 }, { health: 100, invulnerableUntil: 2 }, { invulnerableUntil: 0, z: -5 }, { x: 3, z: 8 }, { x: -8, z: 29 }]) {
+    for (const values of [{ health: 0 }, { health: 100, invulnerableUntil: 2 }, { invulnerableUntil: 0, z: -5 }, { x: 3, z: 8 }, { x: -12, z: 29 }]) {
       Object.assign(b, values); expect(machineGunAim(a, world.players.values()).target).toBeNull();
     }
   });
   it('does not assist through walls or ramp sides', () => {
-    const { world, a, b } = duel(); Object.assign(a, { x: 0, z: -8 }); Object.assign(b, { x: 0, z: 8 });
+    const { world, a, b } = duel(); Object.assign(a, { x: 15, z: 19 }); Object.assign(b, { x: 15, z: 25 });
     expect(machineGunAim(a, world.players.values()).target).toBeNull();
-    expect(clearShot({ x: -28, y: 0.85, z: 0 }, { x: -18, y: 0.65, z: 0 })).toBe(false);
+    expect(clearShot({ x: -46, y: 0.85, z: 0 }, { x: -34, y: 0.65, z: 0 })).toBe(false);
   });
   it('solves intercept time and leads a moving opponent', () => {
     const t = interceptTime({ x: 0, y: 0, z: 20 }, { x: 10, y: 0, z: 0 }, 76);
@@ -33,10 +33,10 @@ describe('server machine-gun aim assistance', () => {
     world.random = () => 0.5; equip(a, 'machineGun'); activate(world, a); expect(world.projectiles.values().next().value!.vx).toBeGreaterThan(0);
   });
   it('bounds correction and switches away from an invalid target', () => {
-    const { world, a, b } = duel(); Object.assign(b, { x: -8 + Math.sin(0.5) * 14, z: Math.cos(0.5) * 14 });
+    const { world, a, b } = duel(); Object.assign(b, { x: -12 + Math.sin(0.5) * 14, z: Math.cos(0.5) * 14 });
     const aim = machineGunAim(a, world.players.values()); expect(aim.target?.id).toBe(b.id);
     expect(Math.atan2(aim.direction.x, aim.direction.z)).toBeCloseTo(WEAPONS.machineGun.aimAssist!.maxCorrection);
-    a.aimTarget = b.id; b.health = 0; const c = world.addPlayer('c', 'New target'); Object.assign(c, { x: -8, z: 15, invulnerableUntil: 0 });
+    a.aimTarget = b.id; b.health = 0; const c = world.addPlayer('c', 'New target'); Object.assign(c, { x: -12, z: 15, invulnerableUntil: 0 });
     expect(machineGunAim(a, world.players.values()).target?.id).toBe(c.id);
   });
   it('does not damage opponents beyond the configured range, even with swept fast bullets', () => {

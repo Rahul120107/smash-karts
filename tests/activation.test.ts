@@ -68,9 +68,9 @@ describe('server-owned single-press attacks', () => {
     const { world, a, b } = duel(); b.z = 16; equip(a, 'machineGun'); world.random = () => 0.5;
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2 }]); world.step(); expect(a.aimTarget).toBe(b.id);
     Object.assign(b, { x: 30, z: 45 });
-    const c = world.addPlayer('c', 'New target'); Object.assign(c, { x: -6.5, z: 10, y: 0, invulnerableUntil: 0 });
+    const c = world.addPlayer('c', 'New target'); Object.assign(c, { x: -10.5, z: 10, y: 0, invulnerableUntil: 0 });
     advance(world, 0.5); expect(a.aimTarget).toBe(c.id); expect(c.health).toBeLessThan(100); expect(b.health).toBe(100);
-    Object.assign(c, { x: 0, z: 8 }); Object.assign(a, { x: 0, z: -8 });
+    Object.assign(c, { x: 15, z: 25 }); Object.assign(a, { x: 15, z: 19 });
     const health = c.health; advance(world, 0.5); expect(a.aimTarget).toBeNull(); expect(c.health).toBe(health);
   });
   it('captures a quick Space tap between input ticks and ignores keyboard repeats', () => {

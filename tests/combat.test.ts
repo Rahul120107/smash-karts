@@ -31,7 +31,7 @@ describe('projectile behaviors', () => {
     expect(b.health).toBeLessThan(50); expect(world.events.some(e => e.kind === 'explosion')).toBe(true); expect(world.projectiles.size).toBe(0);
   });
   it('homing missiles acquire a valid target, turn, and hit it', () => {
-    const { world, a, b } = duel(); b.x = -12; b.z = 11; equip(a, 'homing'); activate(world, a);
+    const { world, a, b } = duel(); b.x = -16; b.z = 11; equip(a, 'homing'); activate(world, a);
     expect(world.projectiles.values().next().value!.target).toBe(b.id); advance(world, 0.1);
     expect(world.projectiles.values().next().value!.vx).toBeLessThan(0); advance(world, 1);
     expect(b.health).toBeLessThan(100); expect(world.projectiles.size).toBe(0);
@@ -68,8 +68,8 @@ describe('projectile behaviors', () => {
   });
   it('bombs land on obstacle tops instead of passing through them', () => {
     const { world, a } = duel(); equip(a, 'bomb'); activate(world, a); const bomb = world.projectiles.values().next().value!;
-    Object.assign(bomb, { x: 0, z: 0, y: 3.8 + bomb.radius + 0.08, vx: 0, vy: -12, vz: 0 }); world.step();
-    expect(bomb.y).toBeGreaterThan(3.8 + bomb.radius); expect(bomb.vy).toBeGreaterThan(0);
+    Object.assign(bomb, { x: 15, z: 22, y: 1.2 + bomb.radius + 0.08, vx: 0, vy: -12, vz: 0 }); world.step();
+    expect(bomb.y).toBeGreaterThan(1.2 + bomb.radius); expect(bomb.vy).toBeGreaterThan(0);
   });
   it('chooses a free spawn when a new player joins an active match after a departure', () => {
     const { world, a, b } = duel(); const third = world.addPlayer('third', 'Third');
@@ -83,22 +83,22 @@ describe('projectile behaviors', () => {
     advance(world, 0.2); expect(b.health).toBeLessThanOrEqual(56); advance(world, 1); expect(world.projectiles.size).toBe(0);
   });
   it('walls stop bullets and muzzle offsets cannot shoot through an obstacle', () => {
-    const { world, a, b } = duel(); a.x = 0; a.z = -8; b.x = 0; b.z = 8;
+    const { world, a, b } = duel(); a.x = 15; a.z = 19; b.x = 15; b.z = 25;
     equip(a, 'machineGun'); activate(world, a); advance(world, 0.3); expect(b.health).toBe(100); expect(world.projectiles.size).toBe(0);
-    a.z = -3.5; equip(a, 'rocket'); activate(world, a); expect(world.projectiles.values().next().value!.z).toBeLessThan(-2.5);
+    a.z = 20.4; equip(a, 'rocket'); activate(world, a); expect(world.projectiles.values().next().value!.z).toBeLessThan(21.4);
     world.step(); expect(world.projectiles.size).toBe(0); expect(b.health).toBe(100);
   });
 });
 describe('damage, power-ups, and match rules', () => {
   it('blast damage falls off within radius and ignores targets outside it', () => {
     const { world, a, b } = duel(); equip(a, 'rocket'); activate(world, a); const p = world.projectiles.values().next().value!;
-    p.x = -8; p.y = 0.65; p.z = 8; a.z = 4; explode(world, p);
+    p.x = -12; p.y = 0.65; p.z = 8; a.z = 4; explode(world, p);
     expect(b.health).toBe(28); expect(a.health).toBeGreaterThan(b.health);
     b.health = 100; b.z = 14; explode(world, p); expect(b.health).toBe(100);
   });
   it('walls occlude explosion damage', () => {
     const { world, a, b } = duel(); equip(a, 'rocket'); activate(world, a); const p = world.projectiles.values().next().value!;
-    p.x = 0; p.y = 0.7; p.z = -3; p.blast = 10; b.x = 0; b.z = 3;
+    p.x = 15; p.y = 0.7; p.z = 20; p.blast = 10; b.x = 15; b.z = 24;
     explode(world, p); expect(b.health).toBe(100);
   });
   it('shield prevents damage for its configured duration and then expires', () => {

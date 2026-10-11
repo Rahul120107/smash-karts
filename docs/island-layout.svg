@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-65 -70 130 140" width="780" height="840">
+<rect x="-65" y="-70" width="130" height="140" fill="#52cafa"/>
+<text x="0" y="-62" text-anchor="middle" font-family="sans-serif" font-size="3">CROSSFIRE ISLAND — PROPORTIONAL PLAN · NORTH ↑</text>
+<rect x="-56" y="-56" width="112" height="112" rx="12" fill="#bfc5ca" stroke="#8b22d2" stroke-width="1.4"/>
+<g fill="#aaaeb8" stroke="#8b22d2" stroke-width="1">
+<rect x="-45" y="-24" width="10" height="48" rx="2"/><rect x="35" y="-24" width="10" height="48" rx="2"/>
+<rect x="-24" y="-45" width="48" height="10" rx="2"/><rect x="-24" y="35" width="48" height="10" rx="2"/>
+</g>
+<g fill="none" stroke-width="1.2" stroke-linejoin="bevel">
+<path d="M-6 -22H-24V-6" stroke="#ffd735"/><path d="M6 -22H24V-6" stroke="#ff4444"/>
+<path d="M-6 22H-24V6" stroke="#366aff"/><path d="M6 22H24V6" stroke="#35e340"/>
+</g>
+<rect x="-9.2" y="-9.2" width="18.4" height="18.4" fill="#fff"/><rect x="-8.6" y="-8.6" width="17.2" height="17.2" fill="none" stroke="#ff4040" stroke-width="1.2" stroke-dasharray="2 2"/>
+<rect x="-8" y="-8" width="16" height="16" fill="#ff8023" stroke="#b94125" stroke-width=".2"/>
+<g fill="none" stroke="white" stroke-width=".6" stroke-dasharray=".8 .8">
+<path d="M-20 -29H-8M8 -29H20M-20 29H-8M8 29H20" stroke-width="6"/>
+<path d="M-30 -20V-8M-30 8V20M30 -20V-8M30 8V20" stroke-width="6"/>
+</g>
+<g><rect x="-44" y="-44" width="8" height="8" rx="1" fill="#ffd735"/><rect x="36" y="-44" width="8" height="8" rx="1" fill="#ff4444"/><rect x="-44" y="36" width="8" height="8" rx="1" fill="#366aff"/><rect x="36" y="36" width="8" height="8" rx="1" fill="#35e340"/></g>
+<g fill="#ffca36" stroke="#753c04" stroke-width=".2"><circle cx="-8" cy="18" r=".8"/><circle cx="8" cy="-18" r=".8"/><circle cx="8" cy="18" r=".8"/><circle cx="-8" cy="-18" r=".8"/><circle cx="-16" cy="0" r=".8"/><circle cx="16" cy="0" r=".8"/><circle cx="0" cy="-16" r=".8"/><circle cx="0" cy="16" r=".8"/><circle cx="-40" cy="0" r=".8"/><circle cx="40" cy="0" r=".8"/><circle cx="0" cy="-40" r=".8"/><circle cx="0" cy="40" r=".8"/></g>
+<g fill="#fff" stroke="#215267" stroke-width=".4"><circle cx="-8" cy="27" r="1.1"/><circle cx="8" cy="-27" r="1.1"/><circle cx="8" cy="27" r="1.1"/><circle cx="-8" cy="-27" r="1.1"/><circle cx="-27" cy="-22" r="1.1"/><circle cx="27" cy="22" r="1.1"/><circle cx="-27" cy="22" r="1.1"/><circle cx="27" cy="-22" r="1.1"/></g>
+<text x="0" y="62" text-anchor="middle" font-family="sans-serif" font-size="2.6">Purple: boundaries / rails · Colours: low barriers · Orange: lava · White dots: spawns</text>
+<text x="0" y="66" text-anchor="middle" font-family="sans-serif" font-size="2.4">Dimension assumptions: 112-unit floor · 16-unit pit · 1.2-unit raised lanes</text>
+</svg>

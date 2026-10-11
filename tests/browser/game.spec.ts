@@ -63,10 +63,13 @@ test('two independent browser sessions drive, collect, fire, finish, replay, and
   await a.screenshot({ path: testInfo.outputPath('lobby.png') });
   await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
   await a.getByRole('button', { name: 'Mute audio' }).click(); await a.keyboard.down('KeyW');
-  await expect.poll(() => !!seenA.latest?.players.find(p => p.name === 'Roadrunner')?.weapon).toBe(true);
-  await a.keyboard.up('KeyW'); await expect(a.getByTestId('equipped-weapon')).not.toHaveText('Find a weapon');
+  await expect.poll(() => !!seenA.latest?.players.find(p => p.name === 'Roadrunner')?.weapon, { intervals: [50] }).toBe(true);
+  // Releasing throttle coasts naturally. Brake before the new central falling hazard.
+  await a.keyboard.up('KeyW'); await a.keyboard.down('KeyS');
+  await expect.poll(() => seenA.latest?.players.find(p => p.name === 'Roadrunner')?.vx ?? -100, { intervals: [50] }).toBeGreaterThan(-1);
+  await a.keyboard.up('KeyS'); await expect(a.getByTestId('equipped-weapon')).not.toHaveText('Find a weapon');
   const player = seenA.latest!.players.find(p => p.name === 'Roadrunner')!;
-  expect(player.z).toBeLessThan(20); expect(player.ack).toBeGreaterThan(0);
+  expect(player.x).toBeLessThan(-10); expect(player.ack).toBeGreaterThan(0);
   await expect.poll(() => seenB.latest?.pickups[0]?.availableAt ?? 0).toBeGreaterThan(0);
   const ammo = player.ammo;
   await expect.poll(()=>seenA.latest!.time>=seenA.latest!.players.find(p=>p.id===player.id)!.nextFire).toBe(true);
@@ -95,7 +98,7 @@ test('pickup disappearance and glowing respawn synchronize across rendered brows
   expect(seenA.latest!.pickups[0]!.active).toBe(false); expect(seenB.latest!.pickups[0]!.active).toBe(false);
   const collection = seenA.history.flatMap(s => s.events).find(e => e.kind === 'pickup' && e.pickupId === box.id)!;
   expect(collection).toBeDefined(); await expect(a.getByTestId('equipped-weapon')).not.toHaveText('Find a weapon');
-  Object.assign(collector, { x: -8, z: 24 });
+  Object.assign(collector, { x: -12, z: 24 });
   await expect.poll(() => seenB.history.flatMap(s => s.events).some(e => e.kind === 'pickupSpawn' && e.pickupId === box.id), { timeout: 20000 }).toBe(true);
   await expect(markerA).toHaveCount(1); await expect(markerB).toHaveCount(1);
   const spawnA = seenA.history.flatMap(s => s.events).find(e => e.kind === 'pickupSpawn' && e.pickupId === box.id)!;
@@ -114,8 +117,8 @@ test('all weapon categories render and synchronize combat between browsers', asy
   for (const weapon of WEAPON_IDS) await test.step(WEAPONS[weapon].label, async () => {
     // Server fixtures arrange reproducible shots. The browser activates them through ordinary Space input.
     world.projectiles.clear(); world.events = [];
-    Object.assign(shooter, { x: -8, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, weapon, ammo: WEAPONS[weapon].ammo, nextFire: 0 });
-    Object.assign(target, { x: weapon === 'homing' ? -11 : -8, y: 0, z: weapon === 'mine' ? -1.8 : weapon === 'bomb' ? 19 : weapon === 'orbit' ? 1.8 : 6, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, respawnAt: 0 });
+    Object.assign(shooter, { x: -12, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, weapon, ammo: WEAPONS[weapon].ammo, nextFire: 0 });
+    Object.assign(target, { x: weapon === 'homing' ? -15 : -12, y: 0, z: weapon === 'mine' ? -1.8 : weapon === 'bomb' ? 19 : weapon === 'orbit' ? 1.8 : 6, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, respawnAt: 0 });
     await expect(a.getByTestId('equipped-weapon')).toHaveText(WEAPONS[weapon].label);
     const since = world.time;
     let fireId = 0;
@@ -141,8 +144,8 @@ test('all weapon categories render and synchronize combat between browsers', asy
   expect(world.projectiles.size).toBeLessThan(20);
   await test.step('elimination, live score, respawn, and protection', async () => {
     world.projectiles.clear();
-    Object.assign(shooter, { x: -8, z: 0, yaw: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, orbitUntil: 0, weapon: 'machineGun', ammo: 30, nextFire: 0 });
-    Object.assign(target, { x: -8, z: 6, health: 12, invulnerableUntil: 0, shieldUntil: 0 });
+    Object.assign(shooter, { x: -12, z: 0, yaw: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, orbitUntil: 0, weapon: 'machineGun', ammo: 30, nextFire: 0 });
+    Object.assign(target, { x: -12, z: 6, health: 12, invulnerableUntil: 0, shieldUntil: 0 });
     await expect(a.getByTestId('equipped-weapon')).toHaveText('Machine gun');
     const score = shooter.score, since = world.time; await a.keyboard.down('Space');
     await expect(b.getByText('KART ELIMINATED')).toBeVisible(); await a.keyboard.up('Space');
@@ -160,32 +163,32 @@ test('ramp-side stability, legitimate jumps and assisted fire agree across two b
   await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
   await a.locator('canvas').click({ position: { x: 600, y: 400 } });
   const shooter = [...world.players.values()].find(p => p.name === 'Roadrunner')!, victim = [...world.players.values()].find(p => p.name === 'Dusty')!;
-  Object.assign(shooter, { x: -26.55, z: 0, y: 0, yaw: Math.PI / 2, vx: 20, vy: 0, vz: 0 });
+  Object.assign(shooter, { x: -45.05, z: 0, y: 0, yaw: Math.PI / 2, vx: 20, vy: 0, vz: 0 });
   const sideSince = world.time; await a.keyboard.down('KeyW');
   await expect.poll(() => seenA.latest?.time ?? 0).toBeGreaterThan(sideSince + 0.6);
   expect(seenB.history.filter(s => s.time > sideSince + 0.05).every(s => s.players.find(p => p.id === shooter.id)!.y === 0)).toBe(true);
   await expect.poll(async () => Number(await a.locator('.game-canvas').getAttribute('data-prediction-y'))).toBe(0);
   await appliedKey(a, seenA, shooter.id, 'KeyW', false, input => input.throttle === 0);
   await appliedKey(a, seenA, shooter.id, 'KeyW', true, input => input.throttle === 1);
-  Object.assign(shooter, { x: -23, z: -8, y: groundHeight(-23, -8), yaw: 0, vx: 0, vy: 0, vz: 21 });
+  Object.assign(shooter, { x: -40, z: 35, y: groundHeight(-40, 35), yaw: 0, vx: 0, vy: 0, vz: 21 });
   const jumpSince = world.time;
   try { await expect.poll(() => seenB.history.some(s => s.time > jumpSince && s.players.some(p => p.id === shooter.id && p.vy > 1))).toBe(true); }
   catch (error) {
     const positions = seenB.history.filter(s => s.time > jumpSince).map(s => ({ time: s.time, player: s.players.find(p => p.id === shooter.id) }));
     await testInfo.attach('ramp-state', { body: JSON.stringify({ shooter, positions }), contentType: 'application/json' }); throw error;
   }
-  await expect.poll(() => seenA.latest?.players.find(p => p.id === shooter.id)?.z ?? -100).toBeGreaterThan(10);
+  await expect.poll(() => seenA.latest?.players.find(p => p.id === shooter.id)?.z ?? -100).toBeGreaterThan(49);
   await appliedKey(a, seenA, shooter.id, 'KeyW', false, input => input.throttle === 0);
   const jumpHeights = seenB.history.filter(s => s.time > jumpSince).map(s => s.players.find(p => p.id === shooter.id)!.y);
-  expect(Math.max(...jumpHeights)).toBeGreaterThan(2.6); expect(Math.max(...jumpHeights)).toBeLessThan(4);
+  expect(Math.max(...jumpHeights)).toBeGreaterThan(1.2); expect(Math.max(...jumpHeights)).toBeLessThan(2.3);
   await expect.poll(async () => Number(await a.locator('.game-canvas').getAttribute('data-prediction-y'))).toBe(0);
-  Object.assign(shooter, { x: -8, z: 0, y: 0, yaw: 0, vx: 0, vy: 0, vz: 0, weapon: 'machineGun', ammo: 30, nextFire: 0, invulnerableUntil: 0 });
-  Object.assign(victim, { x: -6.4, z: 8, y: 0, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0 });
+  Object.assign(shooter, { x: -12, z: 0, y: 0, yaw: 0, vx: 0, vy: 0, vz: 0, weapon: 'machineGun', ammo: 30, nextFire: 0, invulnerableUntil: 0 });
+  Object.assign(victim, { x: -10.4, z: 8, y: 0, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0 });
   await expect(a.getByTestId('aim-feedback')).toHaveText('TRACKING Dusty');
   await a.screenshot({ path: testInfo.outputPath('assisted-fire.png') });
   await a.keyboard.down('Space'); await expect.poll(() => seenB.latest?.players.find(p => p.id === victim.id)?.health ?? 100).toBeLessThan(100);
   await appliedKey(a, seenA, shooter.id, 'Space', false, input => !input.fire); world.projectiles.clear();
-  Object.assign(shooter, { x: 0, z: -8, yaw: 0 }); Object.assign(victim, { x: 0, z: 8, health: 100 });
+  Object.assign(shooter, { x: 15, z: 19, yaw: 0 }); Object.assign(victim, { x: 15, z: 25, health: 100 });
   await expect(a.getByTestId('aim-feedback')).toHaveText('ASSIST READY');
   const blockedSince = world.time; await a.keyboard.down('Space');
   await expect.poll(() => seenB.latest?.time ?? 0).toBeGreaterThan(blockedSince + 0.5); await a.keyboard.up('Space'); expect(victim.health).toBe(100);
@@ -210,7 +213,7 @@ test('movement inputs continue while animation frames are paused', async ({ brow
   await page.evaluate(() => { window.requestAnimationFrame = () => 0; });
   await appliedKey(page, seen, id, 'KeyW', true, input => input.throttle === 1);
   await expect.poll(() => seen.latest?.players[0]?.ack ?? 0).toBeGreaterThan(initialAck + 30);
-  expect(seen.latest!.players[0]!.z).toBeLessThan(25); expect(seen.latest!.players[0]!.y).toBe(0);
+  await expect.poll(() => seen.latest?.players[0]?.x ?? -4).toBeLessThan(-6); expect(seen.latest!.players[0]!.y).toBe(0);
   await appliedKey(page, seen, id, 'KeyW', false, input => input.throttle === 0);
 });
 
@@ -222,21 +225,21 @@ test('quick Space taps execute complete bursts and heavy cannon combat in the ex
   await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
   await a.locator('canvas').click({ position: { x: 600, y: 400 } });
   const shooter = [...world.players.values()].find(p => p.name === 'Roadrunner')!, victim = [...world.players.values()].find(p => p.name === 'Dusty')!;
-  Object.assign(shooter, { x: -8, y: 0, z: 0, yaw: 0, yawRate: 0, vx: 0, vy: 0, vz: 0, weapon: 'machineGun', ammo: 30, nextFire: 0, invulnerableUntil: 0 });
-  Object.assign(victim, { x: -6.5, y: 0, z: 10, vx: 0, vy: 0, vz: 0, invulnerableUntil: 0 });
+  Object.assign(shooter, { x: -12, y: 0, z: 0, yaw: 0, yawRate: 0, vx: 0, vy: 0, vz: 0, weapon: 'machineGun', ammo: 30, nextFire: 0, invulnerableUntil: 0 });
+  Object.assign(victim, { x: -10.5, y: 0, z: 10, vx: 0, vy: 0, vz: 0, invulnerableUntil: 0 });
   await expect(a.getByTestId('equipped-weapon')).toHaveText('Machine gun'); await a.keyboard.press('Space');
   await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.attacking).toBe(true);
   await expect.poll(() => seenA.latest?.players.find(p => p.id === shooter.id)?.ammo, { timeout: 15000 }).toBe(0);
   const fireIds = new Set(seenB.history.flatMap(s => s.events).filter(e => e.kind === 'fire' && e.player === shooter.id && e.weapon === 'machineGun').map(e => e.id));
   expect(fireIds.size).toBe(30); expect(shooter.health).toBe(100); expect(shooter.score).toBe(1);
   Object.assign(shooter, { weapon: 'cannon', ammo: 1, nextFire: 0 });
-  Object.assign(victim, { x: -8, y: 0, z: 6, health: 100, invulnerableUntil: 0, respawnAt: 0, vx: 0, vy: 0, vz: 0 });
+  Object.assign(victim, { x: -12, y: 0, z: 6, health: 100, invulnerableUntil: 0, respawnAt: 0, vx: 0, vy: 0, vz: 0 });
   await expect(a.getByTestId('equipped-weapon')).toHaveText('Old cannon'); await a.screenshot({ path: testInfo.outputPath('old-cannon-ready.png') });
   await a.keyboard.press('Space');
   await expect.poll(() => seenB.history.some(s => s.projectiles.some(p => p.kind === 'cannonball'))).toBe(true);
   await expect.poll(() => seenB.latest?.players.find(p => p.id === victim.id)?.health ?? 100).toBeLessThan(100);
   expect(shooter.health).toBe(100);
-  Object.assign(shooter, { x: 50, z: 43, y: 0, yaw: Math.PI / 2, yawRate: 0, vx: 0, vy: 0, vz: 0 });
+  Object.assign(shooter, { x: 50, z: 0, y: 0, yaw: Math.PI / 2, yawRate: 0, vx: 0, vy: 0, vz: 0 });
   await appliedKey(a, seenA, shooter.id, 'KeyW', true, input => input.throttle === 1);
   await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.x ?? 0).toBeGreaterThan(54);
   await appliedKey(a, seenA, shooter.id, 'KeyW', false, input => input.throttle === 0);
@@ -266,7 +269,7 @@ test('prediction remains playable with 120 ms simulated network round-trip delay
     await expect(page.getByTestId('equipped-weapon')).not.toHaveText('Find a weapon'); await page.keyboard.up('KeyW');
     await expect.poll(() => received?.players[0]?.ack ?? 0).toBeGreaterThan(20);
     const latest = () => received as Snapshot | null;
-    expect(latest()!.players[0]!.z).toBeLessThan(20);
+    expect(latest()!.players[0]!.x).toBeLessThan(-10);
     await expect.poll(async () => Number((await page.locator('.latency').innerText()).replace(' ms', ''))).toBeGreaterThanOrEqual(110);
   } finally { routing = false; for (const timer of pending) clearTimeout(timer); }
 });
@@ -275,8 +278,8 @@ test('invalid room codes and disconnected servers give usable feedback', async (
   await page.goto(`http://127.0.0.1:${server.port}`); await page.getByLabel('YOUR NICKNAME').fill('Tester'); await page.getByLabel('Room code').fill('ZZZZZ');
   await page.getByRole('button', { name: 'Join' }).click(); await expect(page.getByRole('alert')).toContainText('Room not found');
   await page.getByRole('button', { name: 'Dismiss error' }).click(); await page.getByRole('button', { name: 'Create room' }).click(); await expect(page.getByTestId('room-code')).toBeVisible();
-  await server.close(); await expect(page.getByText('Disconnected · retrying…')).toBeVisible();
-  await expect(page.getByRole('alert')).toContainText('server restarted');
+  await server.close(); await expect(page.getByRole('alert')).toContainText('server restarted');
+  await expect(page.locator('.connection-status')).toContainText('Disconnected');
 });
 
 test('a browser automatically rejoins a surviving room after transport loss', async ({ browser }) => {
@@ -300,32 +303,29 @@ test('a browser automatically rejoins a surviving room after transport loss', as
   await a.keyboard.up('KeyW');
 });
 
-test('tropical bridge, tunnel driving and combat synchronize with measured rendering',async({browser},testInfo)=>{
+test('island platforms, lava and respawn synchronize with measured rendering',async({browser},testInfo)=>{
   test.setTimeout(120000);
   const ctxA=await browser.newContext(),ctxB=await browser.newContext();contexts.push(ctxA,ctxB);
   const a=await ctxA.newPage(),b=await ctxB.newPage(),seenA=observe(a),seenB=observe(b);
   const code=await lobby(a,b),world=server.rooms.rooms.get(code)!.simulation;world.duration=150;
   await a.getByRole('button',{name:'Start match'}).click();await expect(b.getByTestId('match-timer')).toBeVisible();
   const driver=[...world.players.values()].find(p=>p.name==='Roadrunner')!,enemy=[...world.players.values()].find(p=>p.name==='Dusty')!;
-  Object.assign(driver,{x:41,y:0,z:-14,yaw:0,vx:0,vy:0,vz:0,weapon:null,invulnerableUntil:0});
+  Object.assign(driver,{x:40,y:0,z:-26,yaw:0,vx:0,vy:0,vz:0,weapon:null,invulnerableUntil:0});
   Object.assign(enemy,{x:30,y:0,z:-20,yaw:0,vx:0,vy:0,vz:0,invulnerableUntil:0});
-  await expect.poll(()=>seenA.latest?.players.find(p=>p.id===driver.id)?.x).toBe(41);
+  await expect.poll(()=>seenA.latest?.players.find(p=>p.id===driver.id)?.x).toBe(40);
   await a.keyboard.down('KeyW');await expect.poll(()=>driver.z).toBeGreaterThan(-3);await a.keyboard.up('KeyW');
-  await expect.poll(()=>seenB.history.some(s=>s.players.some(p=>p.id===driver.id&&Math.abs(p.z)<3&&Math.abs(p.y-3)<.01))).toBe(true);
-  await a.screenshot({path:testInfo.outputPath('tropical-bridge.png')});
+  await expect.poll(()=>seenB.history.some(s=>s.players.some(p=>p.id===driver.id&&Math.abs(p.z)<3&&Math.abs(p.y-1.2)<.01))).toBe(true);
+  await a.screenshot({path:testInfo.outputPath('island-platform.png')});
   await expect.poll(()=>seenA.inputs.at(-1)?.throttle).toBe(0);
-  Object.assign(driver,{x:0,y:0,z:-53,yaw:0,vx:0,vy:0,vz:0,weapon:'machineGun',ammo:30,nextFire:world.time,invulnerableUntil:0});
-  Object.assign(enemy,{x:0,y:0,z:-32,yaw:Math.PI,vx:0,vy:0,vz:0,invulnerableUntil:0,health:100});
-  await expect.poll(()=>seenA.latest?.players.find(p=>p.id===driver.id)?.z).toBe(-53);
-  await a.keyboard.down('KeyW');await expect.poll(()=>driver.z).toBeGreaterThan(-45);await a.keyboard.up('KeyW');
-  await a.keyboard.down('KeyS');await expect.poll(()=>driver.vz).toBeLessThan(1);await a.keyboard.up('KeyS');
-  // Brake inside the corridor before camera inspection.
-  await expect.poll(()=>seenA.inputs.at(-1)?.throttle).toBe(0);
-  await expect.poll(async()=>Number(await a.locator('.game-canvas').getAttribute('data-camera-y'))).toBeLessThan(3.7);
-  expect(driver.y).toBe(0);expect(driver.vy).toBe(0);
-  await a.screenshot({path:testInfo.outputPath('tropical-tunnel.png')});
-  await a.keyboard.down('Space');await a.keyboard.up('Space');
-  await expect.poll(()=>seenB.history.some(s=>s.events.some(e=>e.kind==='fire'&&e.player===driver.id&&e.weapon==='machineGun'))).toBe(true);
+  Object.assign(driver,{x:0,y:0,z:0,vx:0,vy:0,vz:0,health:100});
+  await expect.poll(()=>seenB.latest?.players.find(p=>p.id===driver.id)?.health).toBe(0);
+  await expect(a.locator('.respawn')).toBeVisible();expect(driver.score).toBe(0);expect(enemy.score).toBe(0);
+  await a.screenshot({path:testInfo.outputPath('island-lava-respawn.png')});
+  await expect.poll(()=>seenB.latest?.players.find(p=>p.id===driver.id)?.health).toBe(100);
+  expect(driver.y).toBe(groundHeight(driver.x,driver.z));
+  Object.assign(driver,{x:-12,y:0,z:0,yaw:0,vx:0,vy:0,vz:0,weapon:'machineGun',ammo:30,nextFire:world.time,invulnerableUntil:0});
+  Object.assign(enemy,{x:-12,y:0,z:8,yaw:Math.PI,vx:0,vy:0,vz:0,health:100,invulnerableUntil:0});
+  await expect(a.getByTestId('equipped-weapon')).toHaveText('Machine gun');await a.keyboard.press('Space');
   await expect.poll(()=>enemy.health<100||enemy.deaths>0).toBe(true);expect(driver.health).toBe(100);
   await ctxB.close();contexts=contexts.filter(c=>c!==ctxB);
   await a.setViewportSize({width:1920,height:1080});

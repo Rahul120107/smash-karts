@@ -14,7 +14,7 @@ import { createPickup, createProjectile } from '../weapons/visuals.js';
 import { updatePickupVisual } from '../weapons/pickup-visual.js';
 import { Particles } from '../effects/particles.js';
 import { GameAudio } from '../effects/audio.js';
-import { TropicalEnvironment } from '../maps/tropical.js';
+import { IslandBackdrop } from '../maps/island-backdrop.js';
 import { animateSuspension } from '../vehicles/animation.js';
 import { PickupBatch } from '../weapons/pickup-batch.js';
 
@@ -35,7 +35,7 @@ function disposeObject(object: THREE.Object3D) {
 export class ArenaGame {
   private renderer: THREE.WebGLRenderer; private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(58, 1, 0.1, 650);
-  private environment: TropicalEnvironment; private shake = 0;
+  private environment: IslandBackdrop; private shake = 0;
   private controls = new Controls(); private prediction = new Prediction(); private interpolation = new Interpolation();
   private karts = new Map<string, KartVisual>(); private pickups = new Map<number, THREE.Group>();
   private projectiles = new Map<number, THREE.Group>(); private projectileTemplates = new Map<string, THREE.Group>();
@@ -58,10 +58,10 @@ export class ArenaGame {
     const software=/SwiftShader|llvmpipe|Software Rasterizer/i.test(this.container.dataset.gpu);
     if(software){this.renderer.setPixelRatio(.85);this.renderer.shadowMap.enabled=false;this.container.dataset.reducedGraphics='true';}
     this.renderer.domElement.setAttribute('aria-label', '3D kart combat arena'); this.container.append(this.renderer.domElement);
-    this.scene.background = new THREE.Color(0x9fd7e5); this.scene.fog = new THREE.Fog(0x9fd7e5, 90, 320);
+    this.scene.background = new THREE.Color(0xb4ddf7); this.scene.fog = new THREE.Fog(0xb4ddf7, 90, 320);
     const skyCanvas = document.createElement('canvas'); skyCanvas.width = 4; skyCanvas.height = 128;
     const skyContext = skyCanvas.getContext('2d')!, gradient = skyContext.createLinearGradient(0, 0, 0, 128);
-    gradient.addColorStop(0, '#528fc6'); gradient.addColorStop(0.5, '#badfed'); gradient.addColorStop(1, '#f5e1bb');
+    gradient.addColorStop(0, '#83bffa'); gradient.addColorStop(0.5, '#badfed'); gradient.addColorStop(1, '#e6dcf9');
     skyContext.fillStyle = gradient; skyContext.fillRect(0, 0, 4, 128);
     const skyMap = new THREE.CanvasTexture(skyCanvas); skyMap.colorSpace = THREE.SRGBColorSpace;
     // Tiny original sky cubemap provides broad, soft material reflections, no screen-space pass.
@@ -76,7 +76,7 @@ export class ArenaGame {
     this.scene.add(new THREE.HemisphereLight(0xedf7ff, 0x777153, 2.1));
     const sun = new THREE.DirectionalLight(0xfff0d3, 2.3); sun.position.set(-25, 50, 20); sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024); sun.shadow.camera.left = -62; sun.shadow.camera.right = 62; sun.shadow.camera.top = 62; sun.shadow.camera.bottom = -62; sun.shadow.camera.far = 150; sun.shadow.bias = -0.001; this.scene.add(sun);
-    this.scene.add(buildArena()); this.environment = new TropicalEnvironment(); this.scene.add(this.environment.group); this.particles = new Particles(this.scene);
+    this.scene.add(buildArena()); this.environment = new IslandBackdrop(); this.scene.add(this.environment.group); this.particles = new Particles(this.scene);
     this.camera.position.set(70, 65, 72); this.camera.lookAt(0, 0, 0);
     this.resize = new ResizeObserver(() => this.updateSize()); this.resize.observe(container); this.updateSize();
     this.unsubscribe = connection.onSnapshot(s => this.receive(s));

@@ -1,12 +1,11 @@
 import { groundHeight, WALLS } from './arena.js';
-import { angleDelta, clamp, distance, lerp, segmentBox } from './math.js';
+import { angleDelta, clamp, distance, lerp } from './math.js';
 import type { PlayerState, Vec3 } from './types.js';
+import { wallSegment } from './wall-collision.js';
 import { WEAPONS } from './weapons.js';
 
 export function clearShot(a: Vec3, b: Vec3, radius = WEAPONS.machineGun.radius): boolean {
-  for (const w of WALLS) if (segmentBox(a, b,
-    { x: w.x - w.width / 2 - radius, y: (w.base ?? 0) - radius, z: w.z - w.depth / 2 - radius },
-    { x: w.x + w.width / 2 + radius, y: (w.base ?? 0) + w.height + radius, z: w.z + w.depth / 2 + radius }) !== null) return false;
+  for (const w of WALLS) if (wallSegment(a, b, w, radius)) return false;
   const steps = Math.max(1, Math.ceil(distance(a, b) / 0.5));
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;

@@ -4,9 +4,9 @@ import type { ServerMessage } from '../shared/src/types.js';
 import { duel } from './helpers.js';
 describe('snapshot bandwidth reduction', () => {
   it('rounds wire numbers to a millimeter without changing authoritative values', () => {
-    const { world, a } = duel(); a.x = -8.12345678;
+    const { world, a } = duel(); a.x = -12.12345678;
     const packet = JSON.parse(encodeSnapshot(world.snapshot('ABCDE', a.id, 8))) as Extract<ServerMessage, { type: 'snapshot' }>;
-    expect(packet.state.players[0]!.x).toBe(-8.123); expect(a.x).toBe(-8.12345678); expect(Math.abs(packet.state.players[0]!.x - a.x)).toBeLessThan(0.0005);
+    expect(packet.state.players[0]!.x).toBe(-12.123); expect(a.x).toBe(-12.12345678); expect(Math.abs(packet.state.players[0]!.x - a.x)).toBeLessThan(0.0005);
     expect(packet.state.players[0]!.health).toBe(100); expect(packet.state.players[0]!.id).toBe(a.id);
   });
   it('sends only events newer than the last successfully sent snapshot for each client', () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { serverConfig } from '../server/src/config.js';
 import { websocketUrl } from '../client/src/networking/url.js';
 import { clipCameraRay } from '../client/src/game/camera.js';
-import { segmentBox } from '../shared/src/math.js';
+import { wallSegment } from '../shared/src/wall-collision.js';
 import { ARENA_SIZE, WALLS } from '../shared/src/arena.js';
 
 describe('deployment configuration', () => {
@@ -31,17 +31,16 @@ describe('deployment configuration', () => {
 describe('follow camera wall protection', () => {
   const clear = (anchor: { x: number; y: number; z: number }, desired: typeof anchor) => {
     const clipped = clipCameraRay(anchor, desired);
-    for (const w of WALLS) expect(segmentBox(anchor, clipped, { x: w.x - w.width / 2, y: 0, z: w.z - w.depth / 2 },
-      { x: w.x + w.width / 2, y: w.height, z: w.z + w.depth / 2 })).toBeNull();
+    for (const w of WALLS) expect(wallSegment(anchor, clipped, w)).toBeNull();
     return clipped;
   };
   it('keeps aiming outside a boundary when facing directly into it', () => {
-    expect(clear({ x: ARENA_SIZE / 2 - 1.85, y: 1.2, z: 10 }, { x: ARENA_SIZE / 2 - 0.05, y: 1.2, z: 10 }).x).toBeLessThan(ARENA_SIZE / 2 - 1.3);
+    expect(clear({ x: ARENA_SIZE / 2 - 1.85, y: 1.2, z: 10 }, { x: ARENA_SIZE / 2 - 0.05, y: 1.2, z: 10 }).x).toBeLessThan(ARENA_SIZE / 2 - 1);
   });
   it('clips the smoothed camera position when its interpolation crosses an obstacle', () => {
-    expect(clear({ x: -4, y: 1.2, z: 0 }, { x: 5, y: 6.1, z: 0 }).x).toBeLessThan(-2.8);
+    expect(clear({ x: 21, y: .8, z: 14 }, { x: 27, y: 1, z: 14 }).x).toBeLessThan(23.1);
   });
   it('allows an unobstructed follow camera', () => {
-    const desired = { x: -8, y: 6.1, z: 18 }; expect(clear({ x: -8, y: 1.2, z: 27 }, desired)).toEqual(desired);
+    const desired = { x: -12, y: 6.1, z: 18 }; expect(clear({ x: -12, y: 1.2, z: 27 }, desired)).toEqual(desired);
   });
 });

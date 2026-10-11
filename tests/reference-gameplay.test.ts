@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG, DT } from '../shared/src/config.js';
-import { TUNNEL, WALLS } from '../shared/src/arena.js';
+import { RAMPS, WALLS } from '../shared/src/arena.js';
 import { moveKart, NEUTRAL } from '../shared/src/movement.js';
 import { Prediction } from '../client/src/networking/prediction.js';
 import { matchWinners, standings } from '../shared/src/match.js';
@@ -41,7 +41,7 @@ describe('reference-informed ammunition and activation', () => {
   });
   it('a slow blast missile damages multiple opponents within its larger radius, excluding its owner', () => {
     const { world, a, b } = duel(), c = world.addPlayer('c', 'Third'), d = world.addPlayer('d', 'Distant');
-    Object.assign(c, { x: -2, y: 0, z: 8, invulnerableUntil: 0 }); Object.assign(d, { x: -8, y: 0, z: 19, invulnerableUntil: 0 });
+    Object.assign(c, { x: -18, y: 0, z: 8, invulnerableUntil: 0 }); Object.assign(d, { x: -12, y: 0, z: 19, invulnerableUntil: 0 });
     equip(a, 'blastMissile'); activate(world, a); const missile = world.projectiles.values().next().value!;
     expect(missile.radius).toBeGreaterThan(WEAPONS.rocket.radius); expect(missile.vz).toBeLessThan(WEAPONS.rocket.speed);
     Object.assign(missile, { x: b.x, y: .65, z: b.z }); explode(world, missile);
@@ -63,10 +63,10 @@ describe('server-owned contact power-ups', () => {
     const { world, a, b } = duel(); equip(a, 'orbit'); activate(world, a); b.z = 1.8; b.invulnerableUntil = 2;
     stepContactAttacks(world); expect(b.health).toBe(100); b.invulnerableUntil = 0; b.y = 3;
     stepContactAttacks(world); expect(b.health).toBe(100);
-    const trunk = WALLS.find(w => w.style === 'tree')!;
+    const trunk = WALLS.find(w => w.style === 'barrier' && w.width < 2)!;
     Object.assign(a, { x: trunk.x - 1.1, y: 0, z: trunk.z }); Object.assign(b, { x: trunk.x + 1.1, y: 0, z: trunk.z });
     stepContactAttacks(world); expect(b.health).toBe(100);
-    Object.assign(a, { x: -8, z: 0 }); Object.assign(b, { x: -8, z: 1.8 }); world.time = a.orbitUntil!;
+    Object.assign(a, { x: -12, z: 0 }); Object.assign(b, { x: -12, z: 1.8 }); world.time = a.orbitUntil!;
     stepContactAttacks(world); expect(b.health).toBe(100);
   });
   it('shielded opponents survive orbit contact, and an orbit grants no damage immunity', () => {
@@ -91,7 +91,7 @@ describe('server-owned contact power-ups', () => {
       for (let i = 1; i < times.length; i++) expect(times[i]! - times[i-1]!).toBeGreaterThanOrEqual(.15 - 1e-9);
     }
     b.shieldUntil = world.time; stepContactAttacks(world); expect(b.health).toBe(0); expect(a.score).toBe(1);
-    world.start(); Object.assign(a, { x: -8, z: 0, invulnerableUntil: 0 }); Object.assign(b, { x: -8, z: 1.8, invulnerableUntil: 0 });
+    world.start(); Object.assign(a, { x: -12, z: 0, invulnerableUntil: 0 }); Object.assign(b, { x: -12, z: 1.8, invulnerableUntil: 0 });
     equip(a, 'shield'); activate(world, a); equip(b, 'shield'); activate(world, b); world.events = [];
     stepContactAttacks(world); expect(world.events.filter(e => e.kind === 'shieldImpact')).toHaveLength(2);
   });
@@ -121,35 +121,36 @@ describe('fixed Free For All rules', () => {
 
 describe('homing terrain and muzzle validation', () => {
   it('terrain occludes large-area explosions rather than allowing splash through a ramp', () => {
-    const { world, a, b } = duel(); Object.assign(a, { x: -28, z: 0, yaw: Math.PI / 2 }); Object.assign(b, { x: -18, z: 0 });
+    const { world, a, b } = duel(); Object.assign(a, { x: -46, z: 0, yaw: Math.PI / 2 }); Object.assign(b, { x: -34, z: 0 });
     equip(a, 'blastMissile'); activate(world, a); const missile = world.projectiles.values().next().value!;
-    Object.assign(missile, { x: -27, y: .65, z: 0 }); explode(world, missile); expect(b.health).toBe(100); expect(a.health).toBe(100);
+    Object.assign(missile, { x: -45.2, y: .65, z: 0 }); explode(world, missile); expect(b.health).toBe(100); expect(a.health).toBe(100);
   });
   it('does not acquire an enemy hidden behind a ramp, or a protected enemy', () => {
-    const { world, a, b } = duel(); Object.assign(a, { x: -28, z: 0, yaw: Math.PI / 2 }); Object.assign(b, { x: -18, z: 0 });
+    const { world, a, b } = duel(); Object.assign(a, { x: -46, z: 0, yaw: Math.PI / 2 }); Object.assign(b, { x: -34, z: 0 });
     equip(a, 'homing'); activate(world, a); expect(world.projectiles.values().next().value!.target).toBeNull();
-    world.projectiles.clear(); Object.assign(a, { x: -8, z: 0, yaw: 0 }); Object.assign(b, { x: -8, z: 8, invulnerableUntil: 2 });
+    world.projectiles.clear(); Object.assign(a, { x: -12, z: 0, yaw: 0 }); Object.assign(b, { x: -12, z: 8, invulnerableUntil: 2 });
     equip(a, 'homing'); activate(world, a); expect(world.projectiles.values().next().value!.target).toBeNull();
   });
   it('a projectile muzzle cannot spawn on the opposite side of a ramp face', () => {
-    const { world, a, b } = duel(); Object.assign(a, { x: -27.4, z: 0, yaw: Math.PI / 2 }); Object.assign(b, { x: -18, z: 0 });
+    const { world, a, b } = duel(); Object.assign(a, { x: -45.9, z: 0, yaw: Math.PI / 2 }); Object.assign(b, { x: -34, z: 0 });
     equip(a, 'rocket'); activate(world, a); const rocket = world.projectiles.values().next().value!;
-    expect(rocket.x).toBeLessThan(-26.5); expect(rocket.expires).toBe(world.time); expect(rocket.owner).toBe(a.id);
+    expect(rocket.x).toBeLessThan(-45); expect(rocket.expires).toBe(world.time); expect(rocket.owner).toBe(a.id);
     world.step(); expect(a.health).toBe(100); expect(world.projectiles.size).toBe(0);
   });
 });
 
-describe('full kart-height ceiling contact and prediction', () => {
-  it('keeps the modeled kart below the roof with matching server and prediction landings', () => {
-    const { world, a, b } = duel(); Object.assign(a, { x: 0, y: 2.3, z: TUNNEL.z, vy: 6, vx: 0, vz: 8 }); Object.assign(b, { x: 30, z: 45 });
+describe('new perimeter platform prediction', () => {
+  it('agrees with the authoritative heightfield through a ramp and landing', () => {
+    const { world, a, b } = duel(), ramp = RAMPS[0]!;
+    Object.assign(a, { x: ramp.x, y: 0, z: -26, yaw: 0, vy: 0, vx: 0, vz: 18 }); Object.assign(b, { x: 30, z: 45 });
     const prediction = new Prediction(); prediction.reconcile(world.snapshot('ABCDE', a.id, 8), a.id);
-    for (let i = 1; i <= 90; i++) {
-      const input = { ...NEUTRAL, seq: i }; prediction.step(input, a, world.time + DT); world.enqueue(a.id, [input]); world.step();
-      expect(a.y + CONFIG.kartHeight).toBeLessThanOrEqual(TUNNEL.clearance + 1e-8); expect(a.y).toBeGreaterThanOrEqual(0);
+    let elevated = false;
+    for (let i = 1; i <= 330; i++) {
+      const input = { ...NEUTRAL, throttle: 1, seq: i }; prediction.step(input, a, world.time + DT); world.enqueue(a.id, [input]); world.step();
+      elevated ||= a.y >= ramp.height;
       expect(prediction.kart!.y).toBeCloseTo(a.y, 8); expect(prediction.kart!.vy).toBeCloseTo(a.vy, 8);
+      expect(a.vy).toBeLessThanOrEqual(CONFIG.maxJumpVelocity);
     }
-    expect(a.y).toBe(0); expect(a.vy).toBe(0);
-    const independent = { ...a, y: 2.3, vy: 6 }; moveKart(independent, NEUTRAL);
-    expect(independent.y + CONFIG.kartHeight).toBeLessThan(TUNNEL.clearance); expect(independent.vy).toBeLessThanOrEqual(0);
+    expect(elevated).toBe(true); expect(a.y).toBe(0); expect(a.vy).toBe(0);
   });
 });

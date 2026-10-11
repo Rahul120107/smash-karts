@@ -1,0 +1,11 @@
+{
+  "captured": "2026-10-11T20:17:39.301Z",
+  "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x0000A7A1) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "errors": [],
+  "views": [
+    "top-down",
+    "overview",
+    "third-person"
+  ],
+  "note": "Overviews import production map builders through Vite; third person runs the built React game and authoritative server. Dimensions are inferred; attachment unavailable."
+}

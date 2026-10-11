@@ -1,0 +1,140 @@
+{
+  "map": "Crossfire Island reconstruction",
+  "softwareEightBrowsers": [
+    {
+      "browser": 1,
+      "frames": 6,
+      "elapsed": 2362.199999994038,
+      "maxFrameGap": 499.90000000000146,
+      "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "frameMs": 394.23,
+      "drawCalls": 35,
+      "triangles": 12528,
+      "framesPerSecond": 3
+    },
+    {
+      "browser": 2,
+      "frames": 6,
+      "elapsed": 2212.199999976161,
+      "maxFrameGap": 466.6000000000058,
+      "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "frameMs": 396.59,
+      "drawCalls": 35,
+      "triangles": 12528,
+      "framesPerSecond": 3
+    },
+    {
+      "browser": 3,
+      "frames": 6,
+      "elapsed": 2328.699999994038,
+      "maxFrameGap": 450,
+      "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "frameMs": 391.85,
+      "drawCalls": 54,
+      "triangles": 14918,
+      "framesPerSecond": 3
+    },
+    {
+      "browser": 4,
+      "frames": 6,
+      "elapsed": 2077.900000023841,
+      "maxFrameGap": 450,
+      "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "frameMs": 398.91,
+      "drawCalls": 54,
+      "triangles": 14918,
+      "framesPerSecond": 3
+    },
+    {
+      "browser": 5,
+      "frames": 6,
+      "elapsed": 2278.7999999821186,
+      "maxFrameGap": 450,
+      "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "frameMs": 391.55,
+      "drawCalls": 36,
+      "triangles": 12744,
+      "framesPerSecond": 3
+    },
+    {
+      "browser": 6,
+      "frames": 6,
+      "elapsed": 2254.499999994041,
+      "maxFrameGap": 450,
+      "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "frameMs": 398.46,
+      "drawCalls": 35,
+      "triangles": 12528,
+      "framesPerSecond": 3
+    },
+    {
+      "browser": 7,
+      "frames": 6,
+      "elapsed": 2128.7999999821186,
+      "maxFrameGap": 466.7000000000007,
+      "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "frameMs": 398.54,
+      "drawCalls": 80,
+      "triangles": 18518,
+      "framesPerSecond": 3
+    },
+    {
+      "browser": 8,
+      "frames": 6,
+      "elapsed": 2394.7000000238404,
+      "maxFrameGap": 483.2999999999993,
+      "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "frameMs": 388.72,
+      "drawCalls": 81,
+      "triangles": 18318,
+      "framesPerSecond": 3
+    }
+  ],
+  "softwareOneBrowser": {
+    "viewport": "1920x1080",
+    "concurrentBrowsers": 1,
+    "fps": 8.679528149328705,
+    "meanFrameMs": 115.21363636309451,
+    "p95FrameMs": 200,
+    "maxFrameMs": 266.6999999999971,
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "drawCalls": 39,
+    "triangles": 13086,
+    "reducedGraphics": true
+  },
+  "hardware": {
+    "requested": "hardware",
+    "os": "win32",
+    "cpu": "13th Gen Intel(R) Core(TM) i5-1334U",
+    "memoryGiB": 15.7,
+    "viewport": "1920x1080",
+    "players": 8,
+    "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x0000A7A1) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "frames": {
+      "fps": 60.06305623186296,
+      "meanFrameMs": 16.649169435196143,
+      "p95FrameMs": 16.700000000000728,
+      "maxFrameMs": 16.80000000000109
+    },
+    "render": {
+      "drawCalls": 61,
+      "triangles": 18918,
+      "pixelQualityReduced": false
+    },
+    "status": "measured",
+    "errors": []
+  },
+  "serverBenchmark": {
+    "simulatedSeconds": 180,
+    "players": 8,
+    "wallMilliseconds": 1297,
+    "tickAndSnapshotP95Milliseconds": 0.28,
+    "peakProjectiles": 24,
+    "averageSnapshotBytes": 7712,
+    "estimatedOutboundKBpsPerEightPlayerRoom": 1205,
+    "totalEliminations": 3,
+    "phase": "finished",
+    "context": "No browser tests or profiler running; TypeScript checking ran concurrently."
+  },
+  "scope": "Hardware: one rendered browser and seven native WebSocket peers, six-second warmup/five-second sample. Software: one and eight rendered Chromium browsers. These are local samples, not worst-case or Render/WAN capacity measurements."
+}

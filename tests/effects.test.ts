@@ -7,8 +7,8 @@ import { updatePickupVisual } from '../client/src/weapons/pickup-visual.js';
 import { createProjectile } from '../client/src/weapons/visuals.js';
 import { PickupBatch } from '../client/src/weapons/pickup-batch.js';
 import type { GameEvent } from '../shared/src/types.js';
-const kart = { x: -8, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0 };
-const event: GameEvent = { id: 1, at: 0, kind: 'explosion', player: 'a', x: -8, y: 0.8, z: 0, radius: 4 };
+const kart = { x: -12, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0 };
+const event: GameEvent = { id: 1, at: 0, kind: 'explosion', player: 'a', x: -12, y: 0.8, z: 0, radius: 4 };
 
 describe('bounded rendering and driving audio', () => {
   it('instances active pickup transforms while excluding cooldown boxes and clearing all instances',()=>{
@@ -33,10 +33,10 @@ describe('bounded rendering and driving audio', () => {
   });
   it('hides collected boxes immediately and never predicts a respawn from a local clock', () => {
     const visual = new THREE.Group(), halo = new THREE.Group(); halo.name = 'pickup-halo'; visual.add(halo);
-    const box = { id: 0, x: -8, y: 0, z: 18, active: false, availableAt: 10 };
+    const box = { id: 0, x: -12, y: 0, z: 18, active: false, availableAt: 10 };
     updatePickupVisual(visual, box, true, 100, 100000); expect(visual.visible).toBe(false);
     box.active = true; updatePickupVisual(visual, box, true, 10, 100000);
-    expect(visual.visible).toBe(true); expect(visual.position.x).toBe(-8); expect(visual.position.z).toBe(18);
+    expect(visual.visible).toBe(true); expect(visual.position.x).toBe(box.x); expect(visual.position.z).toBe(18);
     expect(visual.scale.x).toBeCloseTo(0.6); expect(halo.scale.x).toBeCloseTo(1.8);
     updatePickupVisual(visual, box, true, 10.65, 100650); expect(visual.scale.x).toBeCloseTo(1); expect(halo.scale.x).toBeCloseTo(1);
     updatePickupVisual(visual, box, false, 11, 101000); expect(visual.visible).toBe(false);

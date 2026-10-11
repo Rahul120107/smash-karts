@@ -15,9 +15,16 @@ export function damage(world: CombatWorld, target: PlayerState, amount: number, 
   target.health = Math.max(0, target.health - amount);
   world.emit({ kind: 'hit', player: attacker, target: target.id, x: target.x, y: target.y + 0.7, z: target.z });
   if (target.health > 0) return;
+  eliminate(world, target, attacker);
+}
+
+/** Environmental deaths share respawn bookkeeping, without an invented weapon owner. */
+export function eliminate(world: CombatWorld, target: PlayerState, attacker: string) {
+  target.health = 0;
   target.deaths++;
   target.respawnAt = world.time + CONFIG.respawnDelay;
   target.weapon = null; target.ammo = 0; target.shieldUntil = 0; target.boostUntil = 0; target.orbitUntil = 0;
+  target.attacking = false; target.aimTarget = null;
   target.vx = 0; target.vz = 0; target.vy = 0;
   const killer = world.players.get(attacker);
   if (killer && killer.id !== target.id) killer.score++;

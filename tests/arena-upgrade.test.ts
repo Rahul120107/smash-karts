@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ARENA_SIZE, groundHeight, PICKUP_POSITIONS, rampHeight, rampProfile, RAMPS, SPAWNS, WALLS } from '../shared/src/arena.js';
+import { ARENA_SIZE, groundHeight, PICKUP_POSITIONS, rampHeight, rampProfile, RAMPS, SPAWNS, WALLS, toLocal, toWorld, insideLava } from '../shared/src/arena.js';
 import { CONFIG, DT } from '../shared/src/config.js';
 import { drivingTelemetry, moveKart, NEUTRAL, resolveWalls } from '../shared/src/movement.js';
 import { terrainHit, wallHit } from '../server/src/collisions/projectile.js';
@@ -7,18 +7,19 @@ import { activate } from '../server/src/weapons/activate.js';
 import { stepProjectiles } from '../server/src/weapons/projectiles.js';
 import { WEAPONS } from '../shared/src/weapons.js';
 import { duel, equip } from './helpers.js';
-const kart = (x = -8, z = 0) => ({ x, z, y: groundHeight(x, z), yaw: 0, vx: 0, vy: 0, vz: 0, yawRate: 0 });
+const kart = (x = -12, z = 0) => ({ x, z, y: groundHeight(x, z), yaw: 0, vx: 0, vy: 0, vz: 0, yawRate: 0 });
 
 describe('expanded collision-aligned arena', () => {
   it('provides between two and three times the old area with distributed pickups and safe spawns', () => {
     expect((ARENA_SIZE / 72) ** 2).toBeGreaterThan(2); expect((ARENA_SIZE / 72) ** 2).toBeLessThan(3);
-    expect(PICKUP_POSITIONS).toHaveLength(30); expect(RAMPS).toHaveLength(5);
+    expect(PICKUP_POSITIONS).toHaveLength(28); expect(RAMPS).toHaveLength(8);
     for (const spawn of [...SPAWNS, ...PICKUP_POSITIONS]) {
       expect(Math.abs(spawn.x)).toBeLessThan(ARENA_SIZE / 2 - 1); expect(Math.abs(spawn.z)).toBeLessThan(ARENA_SIZE / 2 - 1);
       const k = kart(spawn.x, spawn.z); resolveWalls(k); expect(k.x).toBe(spawn.x); expect(k.z).toBe(spawn.z);
       if ('y' in spawn) expect(spawn.y).toBeCloseTo(groundHeight(spawn.x, spawn.z));
     }
     expect(PICKUP_POSITIONS.filter(p => Math.abs(p.x) > 36 || Math.abs(p.z) > 36).length).toBeGreaterThanOrEqual(12);
+    expect([...SPAWNS,...PICKUP_POSITIONS].every(p=>!insideLava(p.x,p.z))).toBe(true);
   });
   it.each([0, Math.PI / 2, Math.PI, -Math.PI / 2])('retains a boosted kart inside boundary at yaw %s', yaw => {
     const k = { ...kart(), yaw };
@@ -31,24 +32,24 @@ describe('expanded collision-aligned arena', () => {
         const [za, ya] = profile[i - 1]!, [zb, yb] = profile[i]!; if (za === zb) continue;
         for (let t = 0; t <= 1; t += 0.1) {
           const z = za + (zb - za) * t, height = ya + (yb - ya) * t;
-          expect(rampHeight(ramp, z)).toBeCloseTo(height, 8); expect(groundHeight(ramp.x, z)).toBeCloseTo(height, 8);
+          expect(rampHeight(ramp, z)).toBeCloseTo(height, 8); const point=toWorld(0,z-ramp.z,ramp); expect(groundHeight(point.x, point.z)).toBeCloseTo(height, 8);
         }
       }
       expect(terrainHit({ x: ramp.x, y: ramp.height + 1, z: ramp.z }, { x: ramp.x, y: ramp.height - 1, z: ramp.z }, 0.1)).not.toBeNull();
-      const k = kart(ramp.x - ramp.width / 2 - 0.8, ramp.z); Object.assign(k, { yaw: Math.PI / 2, vx: 21 });
+      const point=toWorld(-ramp.width/2-.8,0,ramp),k = kart(point.x,point.z); Object.assign(k, { yaw: Math.PI / 2+(ramp.yaw??0), vx: Math.cos(ramp.yaw??0)*21,vz:-Math.sin(ramp.yaw??0)*21 });
       for (let i = 0; i < 20; i++) moveKart(k, { ...NEUTRAL, throttle: 1 }); expect(k.y).toBe(0); expect(k.vy).toBe(0);
     }
   });
   it('uses visible obstacle bounds for both kart contacts and weapon occlusion', () => {
-    for (const w of WALLS.slice(4)) {
+    for (const w of WALLS) {
       const k = { ...kart(w.x, w.z), y: w.base ?? 0 }; resolveWalls(k);
-      expect(Math.abs(k.x - w.x) >= w.width / 2 + CONFIG.kartRadius - 1e-8 || Math.abs(k.z - w.z) >= w.depth / 2 + CONFIG.kartRadius - 1e-8).toBe(true);
+      expect(Math.abs(toLocal(k.x,k.z,w).x) >= w.width / 2 + CONFIG.kartRadius - 1e-8 || Math.abs(toLocal(k.x,k.z,w).z) >= w.depth / 2 + CONFIG.kartRadius - 1e-8).toBe(true);
       expect(wallHit({ x: w.x - w.width - 2, y: (w.base ?? 0) + 0.7, z: w.z }, { x: w.x + w.width + 2, y: (w.base ?? 0) + 0.7, z: w.z })).not.toBeNull();
     }
   });
 });
 describe('traction, steering inertia and cannon ballistics', () => {
-  it.each([[-8, -18], [8, 18], [0, -24], [0, 24], [-34, -20], [34, 20], [0, -46], [26, 46]])('stays grounded while accelerating and braking on flat ground at %s,%s', (x, z) => {
+  it.each([[-12, -18], [12, 8], [-29, -20], [29, 20], [-49, -20], [49, 20], [-29, -46], [29, 46]])('stays grounded while accelerating and braking on flat ground at %s,%s', (x, z) => {
     const k = kart(x, z);
     for (let i = 0; i < 90; i++) {
       moveKart(k, { ...NEUTRAL, throttle: i < 30 ? 1 : i < 60 ? -1 : 0 });
@@ -64,7 +65,7 @@ describe('traction, steering inertia and cannon ballistics', () => {
     const before = fast.yawRate; moveKart(fast, { ...NEUTRAL, steer: -1 }); expect(fast.yawRate).toBeGreaterThan(-before);
   });
   it('retains controlled drift slip and regains grip smoothly after release', () => {
-    const k = { ...kart(), vx: -6, vz: 18 };
+    const k = { ...kart(-12,-18), vx: -6, vz: 18 };
     for (let i = 0; i < 20; i++) moveKart(k, { ...NEUTRAL, drift: true, steer: 0.4, throttle: 1 });
     const slip = drivingTelemetry(k).slip; expect(slip).toBeGreaterThan(0.12);
     for (let i = 0; i < 40; i++) moveKart(k, { ...NEUTRAL, throttle: 1 });

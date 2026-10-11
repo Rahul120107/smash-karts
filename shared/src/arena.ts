@@ -1,7 +1,15 @@
 import type { Vec3 } from './types.js';
-export interface Wall { x: number; z: number; width: number; depth: number; height: number; style?: 'rock' | 'barrier' }
+/** height is thickness above base; ceilings have a nonzero base. */
+export interface Wall { x: number; z: number; width: number; depth: number; height: number; base?: number; style?: 'rock' | 'barrier' | 'tunnel' | 'tree' }
 export interface Ramp { x: number; z: number; width: number; depth: number; height: number; plateau?: number }
 export const ARENA_SIZE = 112;
+export const TUNNEL = { x: 0, z: -43, width: 12, depth: 16, clearance: 4 } as const;
+export const RIVER = { x: 44, z: 0, width: 26, depth: 8, surface: 0.045 } as const;
+export const BRIDGE = { x: 41, z: 0, width: 8, depth: 24, height: 3, plateau: 8 } as const;
+export const PALMS = [
+  { x: -32, z: -34 }, { x: -35, z: -36 }, { x: -34, z: 34 }, { x: -31, z: 36 },
+  { x: 32, z: 34 }, { x: 35, z: 36 }, { x: 34, z: -34 }, { x: 31, z: -36 },
+] as const;
 export const WALLS: Wall[] = [
   { x: -56, z: 0, width: 2, depth: 114, height: 4 }, { x: 56, z: 0, width: 2, depth: 114, height: 4 },
   { x: 0, z: -56, width: 114, depth: 2, height: 4 }, { x: 0, z: 56, width: 114, depth: 2, height: 4 },
@@ -14,13 +22,20 @@ export const WALLS: Wall[] = [
   { x: 42, z: -30, width: 5, depth: 4, height: 2, style: 'rock' },
   { x: -16, z: -39, width: 8, depth: 2, height: 1.5, style: 'barrier' },
   { x: 16, z: 39, width: 8, depth: 2, height: 1.5, style: 'barrier' },
+  // A real collision corridor: side cliffs and a ceiling, with an open road below.
+  { x: -9, z: TUNNEL.z, width: 6, depth: TUNNEL.depth, height: 10, style: 'tunnel' },
+  { x: 9, z: TUNNEL.z, width: 6, depth: TUNNEL.depth, height: 10, style: 'tunnel' },
+  { x: 0, z: TUNNEL.z, width: TUNNEL.width, depth: TUNNEL.depth, base: TUNNEL.clearance, height: 6, style: 'tunnel' },
+  { x: BRIDGE.x - BRIDGE.width / 2 - 0.2, z: 0, width: 0.4, depth: BRIDGE.plateau, base: BRIDGE.height, height: 0.9, style: 'barrier' },
+  { x: BRIDGE.x + BRIDGE.width / 2 + 0.2, z: 0, width: 0.4, depth: BRIDGE.plateau, base: BRIDGE.height, height: 0.9, style: 'barrier' },
+  ...PALMS.map(p => ({ ...p, width: .45, depth: .45, height: 5.2, style: 'tree' as const })),
 ];
 // Symmetric triangular ramps are a shared heightfield; slopes launch karts at speed.
 export const RAMPS: Ramp[] = [
   { x: -23, z: 0, width: 7, depth: 18, height: 2.6 },
   { x: 23, z: 0, width: 7, depth: 18, height: 2.6 },
   { x: -41, z: 0, width: 8, depth: 24, height: 3 },
-  { x: 41, z: 0, width: 8, depth: 24, height: 3 },
+  BRIDGE,
   { x: 0, z: 41, width: 14, depth: 22, height: 2.8, plateau: 6 },
 ];
 export function rampHeight(r: Ramp, z: number): number {

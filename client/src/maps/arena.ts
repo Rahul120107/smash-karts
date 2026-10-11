@@ -1,20 +1,32 @@
 import * as THREE from 'three';
-import { ARENA_SIZE, rampProfile, RAMPS, WALLS } from '../../../shared/src/arena.js';
+import { ARENA_SIZE, BRIDGE, rampProfile, RAMPS, WALLS } from '../../../shared/src/arena.js';
 import { batchStatic } from '../game/batch.js';
 function block(scene: THREE.Group, size: [number, number, number], pos: [number, number, number], material: THREE.Material) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material); mesh.position.set(...pos); mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh); return mesh;
 }
-function roadTexture() {
+function roadTexture(grass = false) {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
   const ctx = canvas.getContext('2d')!, image = ctx.createImageData(256, 256);
   let seed = 317;
   for (let i = 0; i < image.data.length; i += 4) {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
     const grain = (seed >>> 24) % 16;
-    image.data.set([71 + grain, 88 + grain, 101 + grain, 255], i);
+    image.data.set(grass ? [57 + grain, 129 + grain, 75 + grain, 255] : [52 + grain, 66 + grain, 75 + grain, 255], i);
   }
   ctx.putImageData(image, 0, 0);
   const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(18, 18); map.anisotropy = 2; return map;
+}
+/** Reusable hand-authored stone relief inside the collision box; no decorative overhangs. */
+function rockBlock(width: number, height: number, depth: number) {
+  const geometry=new THREE.BoxGeometry(width,height,depth,3,3,3),position=geometry.getAttribute('position'),colors:number[]=[];
+  for(let i=0;i<position.count;i++) {
+    const x=position.getX(i),y=position.getY(i),z=position.getZ(i),edge=Math.abs(x)>width*.49&&Math.abs(z)>depth*.49;
+    // Tiny bevels only at box corners; broad faces remain aligned with the collision bounds.
+    if(edge){position.setX(i,x-Math.sign(x)*Math.min(.09,width*.03));position.setZ(i,z-Math.sign(z)*Math.min(.09,depth*.03));}
+    const tint=.8+Math.sin(x*2.3+z*1.7+y*3.1)*.07+(y/height+.5)*.13;
+    colors.push(tint,tint,tint);
+  }
+  geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geometry.computeVertexNormals();return geometry;
 }
 export function buildArena(): THREE.Group {
   const group = new THREE.Group();
@@ -26,9 +38,9 @@ export function buildArena(): THREE.Group {
   const blue = new THREE.MeshStandardMaterial({ color: 0x48aac1, roughness: 0.75 });
   const cargo = new THREE.MeshStandardMaterial({ color: 0xcab08f, roughness: 0.9 });
   const greenery = new THREE.MeshStandardMaterial({ color: 0x629b83, flatShading: true });
-  const grass = new THREE.MeshStandardMaterial({ color: 0x72a87b, roughness: 1 });
-  const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x9c9284, flatShading: true, roughness: 1 });
-  block(group, [250, 0.5, 250], [0, -0.55, 0], sand).castShadow = false;
+  const grass = new THREE.MeshStandardMaterial({ color: 0xd2fbc0, map: roadTexture(true), roughness: 1 });
+  const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x9ca68e, flatShading: true, roughness: 1 });
+  const stone = new THREE.MeshStandardMaterial({ color: 0x8b9986, roughness: 0.95, flatShading: true, vertexColors:true });
   block(group, [ARENA_SIZE, 0.3, ARENA_SIZE], [0, -0.15, 0], grass).castShadow = false;
   // A twelve-unit curved outer loop connects open combat plazas and inner lanes.
   const loop = new THREE.Mesh(new THREE.RingGeometry(38, 50, 80), asphalt); loop.rotation.x = -Math.PI / 2; loop.position.y = 0.008; loop.receiveShadow = true; group.add(loop);
@@ -51,12 +63,28 @@ export function buildArena(): THREE.Group {
   for (const z of [-31, 31]) block(group, [61, 0.012, 0.2], [0, 0.015, z], orange).castShadow = false;
   const circle = new THREE.Mesh(new THREE.RingGeometry(6.85, 7, 48), white); circle.rotation.x = -Math.PI / 2; circle.position.y = 0.015; group.add(circle);
   for (const w of WALLS) {
-    block(group, [w.width, w.height, w.depth], [w.x, w.height / 2, w.z], w.style === 'rock' ? rockMaterial : w.style === 'barrier' ? orange : w.height > 3 ? blue : cargo);
-    block(group, [w.width + 0.04, 0.12, w.depth + 0.04], [w.x, w.height, w.z], orange);
+    if (w.style === 'tree') continue; // Exactly sized instanced trunks live in TropicalEnvironment.
+    const base = w.base ?? 0, top = base + w.height;
+    if(w.style==='barrier') block(group,[w.width,w.height,w.depth],[w.x,base+w.height/2,w.z],cargo);
+    else {
+      const obstacle=new THREE.Mesh(rockBlock(w.width,w.height,w.depth),stone);obstacle.position.set(w.x,base+w.height/2,w.z);obstacle.castShadow=true;obstacle.receiveShadow=true;group.add(obstacle);
+    }
+    block(group, [w.width, 0.08, w.depth], [w.x, top + 0.035, w.z], w.style === 'barrier' ? orange : greenery);
+    if (w.style === 'tunnel') {
+      // Portal edging and warm guide lamps reveal the corridor without extra lights.
+      if (!base) for (const end of [-1,1]) {
+        block(group, [0.3, 3.7, 0.12], [w.x + (w.x < 0 ? w.width / 2 - .15 : -w.width / 2 + .15), 1.9, w.z + end * (w.depth / 2 + .06)], white);
+        block(group, [0.42, 0.22, 0.16], [w.x + (w.x < 0 ? w.width / 2 : -w.width / 2), 2.9, w.z + end * (w.depth / 2 + .08)], orange);
+      }
+      continue;
+    }
+    if (base) continue;
+    if (w.style==='rock') continue;
     if (w.width < 20 && w.depth < 20) {
       block(group, [w.width + 0.1, 0.25, w.depth + 0.1], [w.x, 0.14, w.z], dark);
-      for (let x = -w.width / 2 + 0.4; x < w.width / 2; x += 1.1)
-        for (const side of [-1, 1]) block(group, [0.07, w.height - 0.2, 0.05], [w.x + x, w.height / 2, w.z + side * (w.depth / 2 + 0.025)], orange);
+      // Horizontal stone bands make the original obstacles read as island ruins.
+      for(let y=.8;y<w.height;y+=.9) for(const side of [-1,1])
+        block(group,[w.width-.14,.025,.025],[w.x,y,w.z+side*(w.depth/2+.015)],dark).castShadow=false;
     } else {
       const length = Math.max(w.width, w.depth);
       for (let n = -length / 2 + 2; n < length / 2; n += 4) {
@@ -74,7 +102,7 @@ export function buildArena(): THREE.Group {
       for (const x of [x0, x1]) points.push(x,0,za, x,ya,za, x,yb,zb, x,0,za, x,yb,zb, x,0,zb);
     }
     const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3)); geometry.computeVertexNormals();
-    const mesh = new THREE.Mesh(geometry, cargo); mesh.material.side = THREE.DoubleSide; mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh);
+    const mesh = new THREE.Mesh(geometry, rockMaterial); mesh.material.side = THREE.DoubleSide; mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh);
     const slopeLength = (r.depth - (r.plateau ?? 0)) / 2, slope = Math.atan2(r.height, slopeLength);
     for (const side of [-1, 1]) for (const half of [-1, 1]) {
       const stripe = block(group, [0.18, 0.035, slopeLength / Math.cos(slope)], [r.x + side * (r.width / 2 - 0.3), r.height / 2 + 0.025, r.z + half * ((r.plateau ?? 0) / 2 + slopeLength / 2)], orange);
@@ -85,22 +113,21 @@ export function buildArena(): THREE.Group {
       stripe.rotation.x = half * slope; stripe.castShadow = false;
     }
     if (r.plateau) {
-      const edge = block(group, [r.width - 0.4, 0.035, r.plateau - 0.4], [r.x, r.height + 0.025, r.z], blue); edge.castShadow = false;
+      const edge = block(group, [r.width - 0.4, 0.035, r.plateau - 0.4], [r.x, r.height + 0.025, r.z], r === BRIDGE ? cargo : blue); edge.castShadow = false;
+      if (r === BRIDGE) for (let z = -r.plateau / 2 + .3; z < r.plateau / 2; z += .6)
+        block(group, [r.width - .5, .014, .04], [r.x, r.height + .051, z], dark).castShadow = false;
     }
   }
-  // All props are beyond the arena boundary, so silhouettes match the physical arena.
-  for (let i = 0; i < 24; i++) {
-    const a = i / 24 * Math.PI * 2, radius = 84 + (i % 3) * 5, x = Math.sin(a) * radius, z = Math.cos(a) * radius;
-    const trunk = block(group, [0.6, 3, 0.6], [x, 1, z], cargo); trunk.castShadow = false;
-    for (let tier = 0; tier < 2; tier++) {
-      const tree = new THREE.Mesh(new THREE.ConeGeometry(2.6 - tier * 0.6, 4.8, 6), greenery); tree.position.set(x, 4 + tier * 2.1, z); tree.rotation.y = i; group.add(tree);
+  // Curved shortcuts join the western launch lane and two combat plazas.
+  for (const sign of [-1,1]) {
+    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(-27, .02, sign*22), new THREE.Vector3(-43,.02,sign*25),new THREE.Vector3(-41,.02,sign*13));
+    const vertices: number[] = [], points = curve.getPoints(24);
+    for (let i=1;i<points.length;i++) {
+      const a=points[i-1]!,b=points[i]!,dx=b.x-a.x,dz=b.z-a.z,length=Math.hypot(dx,dz),ox=-dz/length*3,oz=dx/length*3;
+      vertices.push(a.x+ox,.022,a.z+oz,b.x+ox,.022,b.z+oz,a.x-ox,.022,a.z-oz,b.x+ox,.022,b.z+oz,b.x-ox,.022,b.z-oz,a.x-ox,.022,a.z-oz);
     }
-  }
-  const mountain = new THREE.MeshStandardMaterial({ color: 0xa8b6bc, flatShading: true });
-  for (let i = 0; i < 14; i++) {
-    const a = i / 14 * Math.PI * 2;
-    const rock = new THREE.Mesh(new THREE.ConeGeometry(11 + i % 4, 15 + i % 7, 5), mountain);
-    rock.position.set(Math.sin(a) * 95, 4, Math.cos(a) * 95); rock.rotation.y = i; group.add(rock);
+    const geometry=new THREE.BufferGeometry(); geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.computeVertexNormals();
+    const mesh=new THREE.Mesh(geometry,asphalt);mesh.receiveShadow=true;group.add(mesh);
   }
   batchStatic(group); return group;
 }

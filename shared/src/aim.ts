@@ -5,8 +5,8 @@ import { WEAPONS } from './weapons.js';
 
 export function clearShot(a: Vec3, b: Vec3, radius = WEAPONS.machineGun.radius): boolean {
   for (const w of WALLS) if (segmentBox(a, b,
-    { x: w.x - w.width / 2 - radius, y: -radius, z: w.z - w.depth / 2 - radius },
-    { x: w.x + w.width / 2 + radius, y: w.height + radius, z: w.z + w.depth / 2 + radius }) !== null) return false;
+    { x: w.x - w.width / 2 - radius, y: (w.base ?? 0) - radius, z: w.z - w.depth / 2 - radius },
+    { x: w.x + w.width / 2 + radius, y: (w.base ?? 0) + w.height + radius, z: w.z + w.depth / 2 + radius }) !== null) return false;
   const steps = Math.max(1, Math.ceil(distance(a, b) / 0.5));
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;

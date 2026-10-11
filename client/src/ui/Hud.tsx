@@ -24,7 +24,7 @@ export function Hud({ state, id, rtt, feed, muted, onMute, onLeave }: { state: S
   const hurt = state.events.some(e => e.kind === 'hit' && e.target === id && state.time - e.at < 0.25);
   return <div className={'hud ' + (hurt ? 'hurt' : '')}>
     <div className="hud-top">
-      <div className="match-title"><span className="eyebrow">CROSSFIRE KARTS</span><strong>Depot arena <span className="room-tag">{state.code}</span></strong></div>
+      <div className="match-title"><span className="eyebrow">CROSSFIRE KARTS</span><strong>Sunbreak island <span className="room-tag">{state.code}</span></strong></div>
       <div className={'timer ' + (state.remaining < 30 ? 'urgent' : '') + (state.remaining <= 10 ? ' final-seconds' : '')}><span>TIME LEFT</span><strong data-testid="match-timer">{clock(state.remaining)}</strong><div className="timer-track"><i style={{ width: state.remaining / state.duration * 100 + '%' }}/></div></div>
       <div className="hud-actions"><span className={'latency ' + (rtt > 180 ? 'slow' : '')}>{rtt} ms</span><button onClick={event => { event.currentTarget.blur(); onMute(); }} aria-label={muted ? 'Unmute audio' : 'Mute audio'}>{muted ? 'Sound off' : 'Sound on'}</button><button onClick={onLeave}>Leave</button></div>
     </div>
@@ -32,7 +32,7 @@ export function Hud({ state, id, rtt, feed, muted, onMute, onLeave }: { state: S
     <div className="kill-feed" aria-live="polite">{feed.filter(e => state.time - e.at < 4 && state.time >= e.at).map(e => <div key={e.id}><b>{state.players.find(p => p.id === e.player)?.name ?? 'Player'}</b><span>✦</span>{state.players.find(p => p.id === e.target)?.name ?? 'Player'}</div>)}</div>
     <div className={'aim-indicator ' + (assisted ? 'locked' : '')} aria-hidden="true"><i/><i/><i/><i/></div>
     {self.weapon === 'machineGun' && self.health > 0 && <div className={'aim-feedback ' + (assisted ? 'locked' : '')} data-testid="aim-feedback">{assisted ? 'TRACKING ' + target!.name : 'ASSIST READY'}</div>}
-    {state.time < 1.5 && <div className="battle-live"><span>DEPOT ARENA</span><strong>BATTLE LIVE</strong><small>Collect. Aim. Fire.</small></div>}
+    {state.time < 1.5 && <div className="battle-live"><span>SUNBREAK ISLAND</span><strong>BATTLE LIVE</strong><small>Collect. Aim. Fire.</small></div>}
     {self.health <= 0 && <div className="respawn"><span className="eyebrow">KART ELIMINATED</span><strong>Back in {Math.max(1, Math.ceil(self.respawnAt - state.time))}</strong><span>Find a pickup. Return the favor.</span></div>}
     <div className="hud-bottom">
       <div className="vitals">

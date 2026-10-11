@@ -5,11 +5,24 @@ import { drivingSoundProfile } from '../client/src/effects/driving-audio.js';
 import { batchStatic } from '../client/src/game/batch.js';
 import { updatePickupVisual } from '../client/src/weapons/pickup-visual.js';
 import { createProjectile } from '../client/src/weapons/visuals.js';
+import { PickupBatch } from '../client/src/weapons/pickup-batch.js';
 import type { GameEvent } from '../shared/src/types.js';
 const kart = { x: -8, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0 };
 const event: GameEvent = { id: 1, at: 0, kind: 'explosion', player: 'a', x: -8, y: 0.8, z: 0, radius: 4 };
 
 describe('bounded rendering and driving audio', () => {
+  it('instances active pickup transforms while excluding cooldown boxes and clearing all instances',()=>{
+    const scene=new THREE.Scene(),template=new THREE.Group(),geometry=new THREE.BoxGeometry(),material=new THREE.MeshBasicMaterial();
+    template.add(new THREE.Mesh(geometry,material));
+    const halo=new THREE.Mesh(geometry,material);halo.name='pickup-halo';halo.position.y=-.6;template.add(halo);
+    const batch=new PickupBatch(scene,template,30),visuals=Array.from({length:30},(_,id)=>{
+      const visual=template.clone();updatePickupVisual(visual,{id,x:id,y:0,z:5,active:id!==4,availableAt:10},true,10,0);return visual;
+    });
+    batch.sync(visuals);expect(scene.children).toHaveLength(2);expect(batch.meshes.every(m=>m.count===29)).toBe(true);
+    const matrix=new THREE.Matrix4(),actual=new THREE.Vector3();batch.meshes[0]!.getMatrixAt(4,matrix);actual.setFromMatrixPosition(matrix);expect(actual.x).toBe(5);expect(actual.z).toBe(5);expect(new THREE.Vector3().setFromMatrixScale(matrix).x).toBeCloseTo(.6);
+    for(const visual of visuals)visual.visible=false;batch.sync(visuals);expect(batch.meshes.every(m=>m.count===0)).toBe(true);
+    batch.dispose();expect(scene.children).toHaveLength(0);geometry.dispose();material.dispose();
+  });
   it('gives the cannon a large spherical model and persistent launch smoke', () => {
     const ball = createProjectile('cannonball'), bullet = createProjectile('bullet');
     const ballSize = new THREE.Box3().setFromObject(ball).getSize(new THREE.Vector3()), bulletSize = new THREE.Box3().setFromObject(bullet).getSize(new THREE.Vector3());

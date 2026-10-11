@@ -6,8 +6,8 @@ export function wallHit(a: Vec3, b: Vec3, radius = 0): number | null {
   let first: number | null = null;
   for (const w of WALLS) {
     const t = segmentBox(a, b,
-      { x: w.x - w.width / 2 - radius, y: -radius, z: w.z - w.depth / 2 - radius },
-      { x: w.x + w.width / 2 + radius, y: w.height + radius, z: w.z + w.depth / 2 + radius });
+      { x: w.x - w.width / 2 - radius, y: (w.base ?? 0) - radius, z: w.z - w.depth / 2 - radius },
+      { x: w.x + w.width / 2 + radius, y: (w.base ?? 0) + w.height + radius, z: w.z + w.depth / 2 + radius });
     if (t !== null && (first === null || t < first)) first = t;
   }
   return first;
@@ -16,8 +16,8 @@ export function wallHit(a: Vec3, b: Vec3, radius = 0): number | null {
 export function wallContact(a: Vec3, b: Vec3, radius: number): { time: number; normal: Vec3 } | null {
   let first: { time: number; normal: Vec3 } | null = null;
   for (const w of WALLS) {
-    const min = { x: w.x - w.width / 2 - radius, y: -radius, z: w.z - w.depth / 2 - radius };
-    const max = { x: w.x + w.width / 2 + radius, y: w.height + radius, z: w.z + w.depth / 2 + radius };
+    const min = { x: w.x - w.width / 2 - radius, y: (w.base ?? 0) - radius, z: w.z - w.depth / 2 - radius };
+    const max = { x: w.x + w.width / 2 + radius, y: (w.base ?? 0) + w.height + radius, z: w.z + w.depth / 2 + radius };
     const time = segmentBox(a, b, min, max);
     if (time === null || first && time >= first.time) continue;
     const point = { x: lerp(a.x, b.x, time), y: lerp(a.y, b.y, time), z: lerp(a.z, b.z, time) };

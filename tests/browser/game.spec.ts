@@ -12,6 +12,7 @@ test.afterEach(async () => { await Promise.all(contexts.splice(0).map(ctx => ctx
 function observe(page: Page) {
   const observed: { latest: Snapshot | null; history: Snapshot[]; inputs: Input[] } = { latest: null, history: [], inputs: [] };
   page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error' && /Shader Error|VALIDATE_STATUS|INVALID_OPERATION|WebGLProgram/.test(message.text())) errors.push(message.text()); });
   page.on('websocket', ws => {
     ws.on('framesent', frame => {
       const message = JSON.parse(frame.payload.toString()) as ClientMessage;
@@ -68,6 +69,7 @@ test('two independent browser sessions drive, collect, fire, finish, replay, and
   expect(player.z).toBeLessThan(20); expect(player.ack).toBeGreaterThan(0);
   await expect.poll(() => seenB.latest?.pickups[0]?.availableAt ?? 0).toBeGreaterThan(0);
   const ammo = player.ammo;
+  await expect.poll(()=>seenA.latest!.time>=seenA.latest!.players.find(p=>p.id===player.id)!.nextFire).toBe(true);
   await a.keyboard.down('Space');
   await expect.poll(() => seenB.latest?.players.find(p => p.name === 'Roadrunner')?.ammo ?? 100).toBeLessThan(ammo);
   await a.keyboard.up('Space');
@@ -289,6 +291,45 @@ test('a browser automatically rejoins a surviving room after transport loss', as
   await a.keyboard.up('KeyW');
 });
 
+test('tropical bridge, tunnel driving and combat synchronize with measured rendering',async({browser},testInfo)=>{
+  test.setTimeout(120000);
+  const ctxA=await browser.newContext(),ctxB=await browser.newContext();contexts.push(ctxA,ctxB);
+  const a=await ctxA.newPage(),b=await ctxB.newPage(),seenA=observe(a),seenB=observe(b);
+  const code=await lobby(a,b),world=server.rooms.rooms.get(code)!.simulation;world.duration=150;
+  await a.getByRole('button',{name:'Start match'}).click();await expect(b.getByTestId('match-timer')).toBeVisible();
+  const driver=[...world.players.values()].find(p=>p.name==='Roadrunner')!,enemy=[...world.players.values()].find(p=>p.name==='Dusty')!;
+  Object.assign(driver,{x:41,y:0,z:-14,yaw:0,vx:0,vy:0,vz:0,weapon:null,invulnerableUntil:0});
+  Object.assign(enemy,{x:30,y:0,z:-20,yaw:0,vx:0,vy:0,vz:0,invulnerableUntil:0});
+  await expect.poll(()=>seenA.latest?.players.find(p=>p.id===driver.id)?.x).toBe(41);
+  await a.keyboard.down('KeyW');await expect.poll(()=>driver.z).toBeGreaterThan(-3);await a.keyboard.up('KeyW');
+  await expect.poll(()=>seenB.history.some(s=>s.players.some(p=>p.id===driver.id&&Math.abs(p.z)<3&&Math.abs(p.y-3)<.01))).toBe(true);
+  await a.screenshot({path:testInfo.outputPath('tropical-bridge.png')});
+  await expect.poll(()=>seenA.inputs.at(-1)?.throttle).toBe(0);
+  Object.assign(driver,{x:0,y:0,z:-53,yaw:0,vx:0,vy:0,vz:0,weapon:'machineGun',ammo:30,nextFire:world.time,invulnerableUntil:0});
+  Object.assign(enemy,{x:0,y:0,z:-32,yaw:Math.PI,vx:0,vy:0,vz:0,invulnerableUntil:0,health:100});
+  await expect.poll(()=>seenA.latest?.players.find(p=>p.id===driver.id)?.z).toBe(-53);
+  await a.keyboard.down('KeyW');await expect.poll(()=>driver.z).toBeGreaterThan(-45);await a.keyboard.up('KeyW');
+  await a.keyboard.down('KeyS');await expect.poll(()=>driver.vz).toBeLessThan(1);await a.keyboard.up('KeyS');
+  // Brake inside the corridor before camera inspection.
+  await expect.poll(()=>seenA.inputs.at(-1)?.throttle).toBe(0);
+  await expect.poll(async()=>Number(await a.locator('.game-canvas').getAttribute('data-camera-y'))).toBeLessThan(3.7);
+  expect(driver.y).toBe(0);expect(driver.vy).toBe(0);
+  await a.screenshot({path:testInfo.outputPath('tropical-tunnel.png')});
+  await a.keyboard.down('Space');await a.keyboard.up('Space');
+  await expect.poll(()=>seenB.history.some(s=>s.events.some(e=>e.kind==='fire'&&e.player===driver.id&&e.weapon==='machineGun'))).toBe(true);
+  await expect.poll(()=>enemy.health<100||enemy.deaths>0).toBe(true);expect(driver.health).toBe(100);
+  await ctxB.close();contexts=contexts.filter(c=>c!==ctxB);
+  await a.setViewportSize({width:1920,height:1080});
+  const measurement=await a.evaluate(()=>new Promise<{fps:number;meanFrameMs:number;p95FrameMs:number;maxFrameMs:number}>(resolve=>{
+    const start=performance.now();let previous=start;const gaps:number[]=[];
+    const frame=(now:number)=>{gaps.push(now-previous);previous=now;if(now-start<5000)requestAnimationFrame(frame);else{const sorted=[...gaps].sort((a,b)=>a-b);resolve({fps:gaps.length*1000/(now-start),meanFrameMs:(now-start)/gaps.length,p95FrameMs:sorted[Math.floor(sorted.length*.95)]!,maxFrameMs:Math.max(...gaps)});}};
+    requestAnimationFrame(frame);
+  }));
+  const details=await a.locator('.game-canvas').evaluate(e=>({gpu:(e as HTMLElement).dataset.gpu,drawCalls:Number((e as HTMLElement).dataset.drawCalls),triangles:Number((e as HTMLElement).dataset.triangles),reducedGraphics:(e as HTMLElement).dataset.reducedGraphics==='true'}));
+  expect(details.drawCalls).toBeGreaterThan(0);expect(details.drawCalls).toBeLessThan(180);expect(measurement.fps).toBeGreaterThan(0);
+  const path=testInfo.outputPath('island-1080p-performance.json');await writeFile(path,JSON.stringify({viewport:'1920x1080',concurrentBrowsers:1,...measurement,...details},null,2));await testInfo.attach('island-performance',{path,contentType:'application/json'});
+});
+
 test('eight independent browser players render and send input concurrently', async ({ browser }, testInfo) => {
   test.setTimeout(240000);
   const pages: Page[] = []; const observations: ReturnType<typeof observe>[] = [];
@@ -317,7 +358,7 @@ test('eight independent browser players render and send input concurrently', asy
     await expect.poll(() => observations[i]!.latest?.players.every(p => p.ack >= 10 && Number.isFinite(p.x) && Number.isFinite(p.z))).toBe(true);
     await expect(pages[i]!.locator('canvas')).toBeVisible(); expect(measurements[i]!.frames).toBeGreaterThan(0);
   }
-  const renderStats = await Promise.all(pages.map(page => page.locator('.game-canvas').evaluate(element => ({ drawCalls: Number((element as HTMLElement).dataset.drawCalls), triangles: Number((element as HTMLElement).dataset.triangles) }))));
+  const renderStats = await Promise.all(pages.map(page => page.locator('.game-canvas').evaluate(element => ({ gpu:(element as HTMLElement).dataset.gpu, frameMs:Number((element as HTMLElement).dataset.frameMs), drawCalls: Number((element as HTMLElement).dataset.drawCalls), triangles: Number((element as HTMLElement).dataset.triangles) }))));
   for (const stats of renderStats) { expect(stats.drawCalls).toBeGreaterThan(0); expect(stats.drawCalls).toBeLessThan(240); }
   const report = measurements.map((m, index) => ({ browser: index + 1, ...m, ...renderStats[index], framesPerSecond: Math.round(m.frames / m.elapsed * 1000) }));
   const output = testInfo.outputPath('eight-browser-performance.json'); await writeFile(output, JSON.stringify(report, null, 2));

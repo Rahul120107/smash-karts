@@ -1,5 +1,6 @@
 import type { GameEvent, KartState, PlayerState } from '../../../shared/src/types.js';
 import { drivingSoundProfile } from './driving-audio.js';
+import { IslandAmbience } from './ambience.js';
 /** Original synthesized audio. Engine and tyre loops start once and use smooth gain/pitch envelopes. */
 export class GameAudio {
   private context: AudioContext | null = null; private master: GainNode | null = null;
@@ -8,6 +9,7 @@ export class GameAudio {
   private tyres: AudioBufferSourceNode | null = null; private tyreGain: GainNode | null = null; private tyreFilter: BiquadFilterNode | null = null;
   private noise: AudioBuffer | null = null; private previousSpeed = 0; private collisionAt = -1;
   private voices = new Set<() => void>(); muted = false;
+  private ambience: IslandAmbience | null = null;
   get activeVoices() { return this.voices.size; }
   private unlock = () => {
     if (!this.context) {
@@ -24,6 +26,7 @@ export class GameAudio {
         this.tyreGain = ctx.createGain(); this.tyreGain.gain.value = 0; this.tyreGain.connect(this.master);
         this.tyreFilter = ctx.createBiquadFilter(); this.tyreFilter.type = 'bandpass'; this.tyreFilter.Q.value = 1.4; this.tyreFilter.connect(this.tyreGain);
         this.tyres = ctx.createBufferSource(); this.tyres.buffer = this.noise; this.tyres.loop = true; this.tyres.connect(this.tyreFilter); this.tyres.start();
+        this.ambience = new IslandAmbience(ctx,this.master,this.noise);
       } catch (error) {
         console.warn('Audio unavailable:', error);
         if (this.context) void this.context.close().catch(() => {}); this.context = null; return;
@@ -44,7 +47,9 @@ export class GameAudio {
     this.engineGain.gain.setTargetAtTime(active ? profile!.engineVolume : 0, at, 0.1);
     this.tyreGain.gain.setTargetAtTime(active ? profile!.tyreVolume : 0, at, 0.07);
     this.tyreFilter.frequency.setTargetAtTime(profile?.tyreHz ?? 650, at, 0.09);
+    this.ambience?.update(kart, !!active);
   }
+  landing(speed: number) { if (speed < 2) return; this.event({ id: 0, at: 0, x: 0, y: 0, z: 0, kind: 'collision', player: '' }, 4 / Math.min(1, speed / 8)); }
   event(event: GameEvent, distance: number) {
     if (event.kind === 'pickupSpawn') return;
     if (!this.context || !this.master || distance > 55 || this.muted || document.hidden || this.voices.size >= 12) return;
@@ -72,6 +77,7 @@ export class GameAudio {
   dispose() {
     window.removeEventListener('pointerdown', this.unlock); window.removeEventListener('keydown', this.unlock);
     this.engine?.stop(); this.harmonic?.stop(); this.tyres?.stop();
+    this.ambience?.dispose();
     for (const cleanup of [...this.voices]) cleanup();
     if (this.context) void this.context.close().catch(error => console.warn('Audio close failed:', error));
   }

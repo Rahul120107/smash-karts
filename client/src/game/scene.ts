@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CONFIG, DT } from '../../../shared/src/config.js';
 import { angleDelta } from '../../../shared/src/math.js';
 import { drivingTelemetry } from '../../../shared/src/movement.js';
-import { groundHeight } from '../../../shared/src/arena.js';
+import { groundHeight, PICKUP_POSITIONS } from '../../../shared/src/arena.js';
 import { clipCameraRay } from './camera.js';
 import type { Input, PlayerState, Snapshot } from '../../../shared/src/types.js';
 import { connection } from '../networking/connection.js';
@@ -14,6 +14,9 @@ import { createPickup, createProjectile } from '../weapons/visuals.js';
 import { updatePickupVisual } from '../weapons/pickup-visual.js';
 import { Particles } from '../effects/particles.js';
 import { GameAudio } from '../effects/audio.js';
+import { TropicalEnvironment } from '../maps/tropical.js';
+import { animateSuspension } from '../vehicles/animation.js';
+import { PickupBatch } from '../weapons/pickup-batch.js';
 
 function disposeObject(object: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
@@ -23,6 +26,7 @@ function disposeObject(object: THREE.Object3D) {
       for (const m of Array.isArray(child.material) ? child.material : [child.material]) {
         materials.add(m); const map = (m as THREE.MeshBasicMaterial).map; if (map) textures.add(map);
       }
+      if(child instanceof THREE.InstancedMesh)child.dispose();
     }
   });
   for (const g of geometries) g.dispose(); for (const m of materials) m.dispose(); for (const t of textures) t.dispose();
@@ -30,11 +34,13 @@ function disposeObject(object: THREE.Object3D) {
 
 export class ArenaGame {
   private renderer: THREE.WebGLRenderer; private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(58, 1, 0.1, 200);
+  private camera = new THREE.PerspectiveCamera(58, 1, 0.1, 650);
+  private environment: TropicalEnvironment; private shake = 0;
   private controls = new Controls(); private prediction = new Prediction(); private interpolation = new Interpolation();
   private karts = new Map<string, KartVisual>(); private pickups = new Map<number, THREE.Group>();
   private projectiles = new Map<number, THREE.Group>(); private projectileTemplates = new Map<string, THREE.Group>();
   private pickupTemplate = createPickup(); private particles: Particles; readonly audio = new GameAudio();
+  private pickupBatch = new PickupBatch(this.scene,this.pickupTemplate,PICKUP_POSITIONS.length);
   private unsubscribe: () => void; private resize: ResizeObserver; private previous = performance.now();
   private accumulator = 0; private outgoing: Input[] = []; private lastEvent = 0; private lastPhase = ''; private lastCode = '';
   private inputTimer: ReturnType<typeof setInterval>; private previousInput = performance.now();
@@ -45,21 +51,32 @@ export class ArenaGame {
   private aim = new THREE.Vector3(); private cameraTarget = new THREE.Vector3();
   constructor(private container: HTMLDivElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25)); this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFShadowMap; this.renderer.shadowMap.autoUpdate = false; this.renderer.shadowMap.needsUpdate = true;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25)); this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; this.renderer.shadowMap.autoUpdate = false; this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.1;
+    const gl=this.renderer.getContext(),gpu=gl.getExtension('WEBGL_debug_renderer_info');
+    this.container.dataset.gpu=gpu ? String(gl.getParameter(gpu.UNMASKED_RENDERER_WEBGL)) : 'Renderer unavailable';
+    const software=/SwiftShader|llvmpipe|Software Rasterizer/i.test(this.container.dataset.gpu);
+    if(software){this.renderer.setPixelRatio(.85);this.renderer.shadowMap.enabled=false;this.container.dataset.reducedGraphics='true';}
     this.renderer.domElement.setAttribute('aria-label', '3D kart combat arena'); this.container.append(this.renderer.domElement);
-    this.scene.background = new THREE.Color(0xaad6ed); this.scene.fog = new THREE.Fog(0xaad6ed, 72, 135);
+    this.scene.background = new THREE.Color(0x9fd7e5); this.scene.fog = new THREE.Fog(0x9fd7e5, 90, 320);
     const skyCanvas = document.createElement('canvas'); skyCanvas.width = 4; skyCanvas.height = 128;
     const skyContext = skyCanvas.getContext('2d')!, gradient = skyContext.createLinearGradient(0, 0, 0, 128);
     gradient.addColorStop(0, '#528fc6'); gradient.addColorStop(0.5, '#badfed'); gradient.addColorStop(1, '#f5e1bb');
     skyContext.fillStyle = gradient; skyContext.fillRect(0, 0, 4, 128);
     const skyMap = new THREE.CanvasTexture(skyCanvas); skyMap.colorSpace = THREE.SRGBColorSpace;
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(140, 24, 12), new THREE.MeshBasicMaterial({ map: skyMap, side: THREE.BackSide, fog: false, depthWrite: false })); sky.renderOrder = -2; this.scene.add(sky);
+    // Tiny original sky cubemap provides broad, soft material reflections, no screen-space pass.
+    const faces=Array.from({length:6},(_,i)=>{
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=32;const context=canvas.getContext('2d')!;
+      const gradient=context.createLinearGradient(0,0,0,32);gradient.addColorStop(0,i===3?'#557b66':'#d6f3fa');gradient.addColorStop(1,i===2?'#8bc8e1':'#598972');context.fillStyle=gradient;context.fillRect(0,0,32,32);return canvas;
+    });
+    const reflections=new THREE.CubeTexture(faces);reflections.colorSpace=THREE.SRGBColorSpace;reflections.needsUpdate=true;
+    if(!software){this.scene.environment=reflections;this.scene.environmentIntensity=.45;}else reflections.dispose();
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 24, 12), new THREE.MeshBasicMaterial({ map: skyMap, side: THREE.BackSide, fog: false, depthWrite: false })); sky.renderOrder = -2; this.scene.add(sky);
     const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffedbe, fog: false })); sunDisc.position.set(-70, 82, 58); this.scene.add(sunDisc);
     this.scene.add(new THREE.HemisphereLight(0xedf7ff, 0x777153, 2.1));
     const sun = new THREE.DirectionalLight(0xfff0d3, 2.3); sun.position.set(-25, 50, 20); sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024); sun.shadow.camera.left = -62; sun.shadow.camera.right = 62; sun.shadow.camera.top = 62; sun.shadow.camera.bottom = -62; sun.shadow.camera.far = 150; sun.shadow.bias = -0.001; this.scene.add(sun);
-    this.scene.add(buildArena()); this.particles = new Particles(this.scene);
+    this.scene.add(buildArena()); this.environment = new TropicalEnvironment(); this.scene.add(this.environment.group); this.particles = new Particles(this.scene);
     this.camera.position.set(70, 65, 72); this.camera.lookAt(0, 0, 0);
     this.resize = new ResizeObserver(() => this.updateSize()); this.resize.observe(container); this.updateSize();
     this.unsubscribe = connection.onSnapshot(s => this.receive(s));
@@ -83,7 +100,7 @@ export class ArenaGame {
       const visual = createKart(player.color, player.name); visual.group.position.set(player.x, player.y, player.z); visual.group.rotation.y = player.yaw; this.scene.add(visual.group); this.karts.set(player.id, visual); this.renderer.shadowMap.needsUpdate = true; this.idleDirty = true;
     }
     for (const box of state.pickups) {
-      if (!this.pickups.has(box.id)) { const visual = this.pickupTemplate.clone(); this.scene.add(visual); this.pickups.set(box.id, visual); }
+      if (!this.pickups.has(box.id)) { const visual = this.pickupTemplate.clone(); this.pickups.set(box.id, visual); }
       updatePickupVisual(this.pickups.get(box.id)!, box, state.phase === 'playing', state.time, performance.now());
     }
     const activeProjectiles = new Set(state.projectiles.map(p => p.id));
@@ -98,7 +115,9 @@ export class ArenaGame {
       if (state.phase !== 'playing') continue;
       if (state.time - event.at > 0.3) continue;
       this.particles.emit(event);
-      this.audio.event(event, self ? Math.hypot(self.x - event.x, self.z - event.z) : 30);
+      const distance = self ? Math.hypot(self.x - event.x, self.z - event.z) : 30;
+      this.audio.event(event, distance);
+      if (event.kind === 'explosion' && distance < 14 || event.kind === 'collision' && event.player === id) this.shake = Math.min(.12, this.shake + .09 / (1 + distance / 5));
     }
     this.lastFrame = performance.now();
   }
@@ -147,9 +166,12 @@ export class ArenaGame {
         this.particles.trail({ ...p, x: visual.position.x, y: visual.position.y, z: visual.position.z }, delta);
       }
     }
+    if(!state)for(const visual of this.pickups.values())visual.visible=false;
+    this.pickupBatch.sync(this.pickups.values());
     if (playing && self) this.followCamera(self, delta);
     else { this.camera.position.set(70, 65, 72); this.camera.lookAt(0, 0, 0); this.cameraReady = false; }
     this.audio.update(self, this.prediction.kart, !!playing, delta);
+    this.environment.update(now / 1000, this.camera.position, this.container.dataset.reducedGraphics === 'true');
     this.particles.update(delta);
     if (playing && !document.hidden && now - this.lastShadow >= 1000 / 20) { this.renderer.shadowMap.needsUpdate = true; this.lastShadow = now; }
     this.renderer.render(this.scene, this.camera);
@@ -161,6 +183,7 @@ export class ArenaGame {
       this.container.dataset.triangles = String(this.renderer.info.render.triangles);
       this.container.dataset.fps = String(Math.round(this.frames * 1000 / (now - this.statsAt)));
       this.container.dataset.audioVoices = String(this.audio.activeVoices);
+      this.container.dataset.frameMs = this.frameAverage.toFixed(2);
       this.frames = 0; this.statsAt = now;
       // Foreground measurements only; menu/background throttling never selects low quality.
       this.slowSamples = playing && !document.hidden && this.frameAverage > 50 ? this.slowSamples + 1 : 0;
@@ -192,18 +215,22 @@ export class ArenaGame {
     visual.contact.visible = !this.renderer.shadowMap.enabled;
     visual.contact.position.y = groundHeight(visual.group.position.x, visual.group.position.z) - visual.group.position.y + 0.025;
     (visual.contact.material as THREE.MeshBasicMaterial).opacity = 0.22 / (1 + Math.max(0, -visual.contact.position.y) * 2);
-    for (const wheel of visual.wheels) wheel.rotation.x += telemetry.forward * dt * 3;
+    const animation = animateSuspension(visual.suspension, position, dt);
+    visual.chassis.position.y = visual.suspension.offset;
+    if (p.id === id && animation.landing > 2) { this.audio.landing(animation.landing); this.shake = Math.max(this.shake, .035); }
+    for (const wheel of visual.wheels) wheel.rotation.x += telemetry.forward * dt / .36;
     const wheelAngle = Math.atan((position.yawRate ?? 0) * CONFIG.wheelbase / (Math.abs(telemetry.forward) > 0.2 ? telemetry.forward : 0.2));
     for (const pivot of visual.steering) pivot.rotation.y += (Math.max(-0.5, Math.min(0.5, wheelAngle)) - pivot.rotation.y) * (1 - Math.exp(-12 * dt));
     const fx = Math.sin(position.yaw), fz = Math.cos(position.yaw);
     const slope = telemetry.grounded ? -Math.atan2(groundHeight(position.x + fx * 0.8, position.z + fz * 0.8) - groundHeight(position.x - fx * 0.8, position.z - fz * 0.8), 1.6) : 0;
-    visual.chassis.rotation.x += (Math.max(-0.35, Math.min(0.35, slope)) - visual.chassis.rotation.x) * (1 - Math.exp(-12 * dt));
+    visual.chassis.rotation.x += (Math.max(-0.4, Math.min(0.4, slope + visual.suspension.pitch)) - visual.chassis.rotation.x) * (1 - Math.exp(-12 * dt));
     for (const wheel of visual.wheels) {
       const pivot = wheel.parent!;
       const contact = groundHeight(position.x + Math.cos(position.yaw) * pivot.position.x + fx * pivot.position.z, position.z - fx * pivot.position.x + fz * pivot.position.z);
-      pivot.position.y = 0.33 + (telemetry.grounded ? Math.max(-0.28, Math.min(0.28, contact - position.y)) : 0);
+      const wheelHeight = .36 + (telemetry.grounded ? Math.max(-.28, Math.min(.28, contact - position.y)) : -.05);
+      pivot.position.y += (wheelHeight - pivot.position.y) * (1 - Math.exp(-18 * dt));
     }
-    visual.chassis.rotation.z += (Math.max(-0.06, Math.min(0.06, -telemetry.lateral * 0.008)) - visual.chassis.rotation.z) * (1 - Math.exp(-10 * dt));
+    visual.chassis.rotation.z = visual.suspension.roll;
     const aimTarget = state.players.find(other => other.id === p.aimTarget);
     const turretYaw = aimTarget ? angleDelta(position.yaw, Math.atan2(aimTarget.x - position.x, aimTarget.z - position.z)) : 0;
     visual.turret.rotation.y += (Math.max(-0.38, Math.min(0.38, turretYaw)) - visual.turret.rotation.y) * (1 - Math.exp(-18 * dt));
@@ -219,18 +246,28 @@ export class ArenaGame {
     this.renderYaw += angleDelta(this.renderYaw, visual.group.rotation.y) * (1 - Math.exp(-9 * dt));
     const fx = Math.sin(this.renderYaw), fz = Math.cos(this.renderYaw);
     this.aim.set(pos.x + fx * 1.8, pos.y + 1.2, pos.z + fz * 1.8);
-    this.cameraTarget.set(pos.x - fx * 8.8, pos.y + 6.1, pos.z - fz * 8.8);
+    const speed = Math.min(1, Math.hypot(self.vx, self.vz) / (CONFIG.maxSpeed * CONFIG.boostMultiplier));
+    const distance = 8.2 + speed * 2, fov = 58 + speed * 5;
+    this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-3 * dt)); this.camera.updateProjectionMatrix();
+    this.cameraTarget.set(pos.x - fx * distance, pos.y + 5.6 + speed * .6, pos.z - fz * distance);
     const anchor = { x: pos.x, y: pos.y + 1.2, z: pos.z };
     Object.assign(this.aim, clipCameraRay(anchor, this.aim));
     Object.assign(this.cameraTarget, clipCameraRay(anchor, this.cameraTarget));
     if (!this.cameraReady || this.camera.position.distanceTo(this.cameraTarget) > 20) this.camera.position.copy(this.cameraTarget);
     else this.camera.position.lerp(this.cameraTarget, 1 - Math.exp(-12 * dt));
     Object.assign(this.camera.position, clipCameraRay(anchor, this.camera.position));
+    this.shake *= Math.exp(-12 * dt);
+    this.camera.position.x += Math.sin(performance.now() * .045) * this.shake;
+    this.camera.position.y += Math.sin(performance.now() * .053) * this.shake * .5;
+    Object.assign(this.camera.position, clipCameraRay(anchor, this.camera.position));
     this.camera.lookAt(this.aim); this.cameraReady = true;
+    this.container.dataset.cameraY=this.camera.position.y.toFixed(3);
   }
   dispose() {
     this.renderer.setAnimationLoop(null); clearInterval(this.inputTimer); this.unsubscribe(); this.controls.dispose(); this.audio.dispose(); this.resize.disconnect(); this.particles.dispose();
+    this.pickupBatch.dispose();
     disposeObject(this.scene); disposeObject(this.pickupTemplate); for (const template of this.projectileTemplates.values()) disposeObject(template);
+    this.scene.environment?.dispose();
     this.renderer.domElement.removeEventListener('webglcontextlost', this.contextLost); this.renderer.dispose(); this.renderer.domElement.remove();
   }
 }

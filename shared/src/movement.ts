@@ -16,6 +16,7 @@ export function moveKart(k: KartState, input: Input, boosted = false, dt = DT): 
 }
 
 function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number): number {
+  resolveCeilings(k);
   const oldX = k.x, oldZ = k.z, oldGround = groundHeight(k.x, k.z);
   const grounded = k.y <= oldGround + CONFIG.groundTolerance && k.vy <= CONFIG.groundTolerance;
   const fx = Math.sin(k.yaw), fz = Math.cos(k.yaw);
@@ -23,7 +24,11 @@ function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number)
   let lateral = k.vx * fz - k.vz * fx;
   const acceleration = input.throttle < 0 ? (forward > 0.5 ? CONFIG.braking : CONFIG.reverseAcceleration) : CONFIG.acceleration;
   const traction = grounded ? 1 : CONFIG.airControl;
-  forward += input.throttle * acceleration * traction * dt;
+  // Torque tapers toward top speed instead of meeting a hard speed cap abruptly.
+  const torque = input.throttle > 0 ? 0.9 + 0.1 * (1 - clamp(Math.abs(forward) / CONFIG.maxSpeed, 0, 1)) ** 2 : 1;
+  const wasBraking = input.throttle < 0 && forward > 0.5;
+  forward += input.throttle * acceleration * (boosted ? 1 : torque) * traction * dt;
+  if (wasBraking && forward < 0) forward = 0;
   forward *= Math.exp(-(input.throttle === 0 ? 1.6 : 0.45) * dt);
   const maximum = CONFIG.maxSpeed * (boosted ? CONFIG.boostMultiplier : 1);
   forward = clamp(forward, -CONFIG.reverseSpeed, maximum);
@@ -66,8 +71,19 @@ function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number)
     k.vy = Math.max(-CONFIG.terminalVelocity, k.vy - CONFIG.gravity * dt); k.y += k.vy * dt;
     if (k.y <= ground) { k.y = ground; k.vy = 0; }
   }
+  resolveCeilings(k);
   recoverKart(k);
   return impact;
+}
+
+/** Vertical roof contacts cannot turn a jump into an enormous sideways impulse. */
+export function resolveCeilings(k: KartState) {
+  for (const wall of WALLS) {
+    const base = wall.base ?? 0;
+    if (!base || wall.style !== 'tunnel' || k.y >= base || k.y + 1 <= base) continue;
+    if (Math.abs(k.x - wall.x) > wall.width / 2 + CONFIG.kartRadius || Math.abs(k.z - wall.z) > wall.depth / 2 + CONFIG.kartRadius) continue;
+    k.y = Math.max(groundHeight(k.x, k.z), base - 1); k.vy = Math.min(0, k.vy);
+  }
 }
 
 function limitHorizontalVelocity(k: KartState) {
@@ -116,7 +132,8 @@ export function drivingTelemetry(k: KartState) {
 
 export function resolveWalls(k: KartState): void {
   for (const w of WALLS) {
-    if (k.y > w.height) continue;
+    const base = w.base ?? 0;
+    if (k.y >= base + w.height || k.y + 1 <= base || base > 0 && w.style === 'tunnel' && k.y < base) continue;
     const minX = w.x - w.width / 2, maxX = w.x + w.width / 2;
     const minZ = w.z - w.depth / 2, maxZ = w.z + w.depth / 2;
     const cx = clamp(k.x, minX, maxX), cz = clamp(k.z, minZ, maxZ);

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { groundHeight } from '../../../shared/src/arena.js';
 import { drivingTelemetry } from '../../../shared/src/movement.js';
 import type { GameEvent, KartState, Projectile, Vec3 } from '../../../shared/src/types.js';
+import { WEAPONS } from '../../../shared/src/weapons.js';
 interface Particle { position: THREE.Vector3; velocity: THREE.Vector3; color: THREE.Color; life: number; total: number; size: number; gravity: number; growth: number }
 interface Decal { x: number; y: number; z: number; yaw: number; life: number; size: number; color: THREE.Color }
 /** Fixed-capacity effects: particles, shockwaves and tyre marks cost at most three draw calls. */
@@ -35,7 +36,7 @@ export class Particles {
     if (event.kind === 'fire' && (event.weapon === 'shield' || event.weapon === 'boost' || event.weapon === 'mine')) return;
     const explosive = event.kind === 'explosion' || event.kind === 'elimination';
     const cannon = event.weapon === 'cannon';
-    const color = explosive ? cannon ? 0xffd29a : 0xffad4c : event.kind === 'respawn' || event.kind === 'shield' || event.kind === 'shieldImpact' ? 0x68ddff : event.kind === 'pickup' ? 0xffd963 : event.kind === 'boost' ? 0x64ffcf : 0xfff1b5;
+    const color = explosive ? cannon ? 0xffd29a : 0xffad4c : event.kind === 'respawn' || event.kind === 'shield' || event.kind === 'shieldImpact' ? 0x68ddff : event.kind === 'pickup' ? event.weapon ? WEAPONS[event.weapon].color : 0xffd963 : event.kind === 'boost' ? 0x64ffcf : 0xfff1b5;
     const fire = event.kind === 'fire', count = explosive ? 22 : fire ? cannon ? 8 : 4 : event.kind === 'collision' ? 5 : 12;
     for (let i = 0; i < count; i++) this.add(event, color, explosive ? 0.16 + Math.random() * 0.25 : fire ? 0.1 : 0.065, explosive ? 0.65 : fire ? 0.09 : 0.4, explosive ? 12 : fire ? 2 : 5);
     if (explosive) for (let i = 0; i < 10; i++) this.add(event, 0x75808b, 0.18, 0.85, 4, -1.2, 1.8);
@@ -54,7 +55,7 @@ export class Particles {
   trail(p: Projectile, dt: number) {
     if ((p.kind !== 'rocket' && p.kind !== 'homing' && p.kind !== 'bomb') || Math.random() > Math.min(1, dt * 30)) return;
     const speed = Math.hypot(p.vx, p.vy, p.vz) || 1;
-    this.add({ x: p.x - p.vx / speed * 0.6, y: p.y - p.vy / speed * 0.6, z: p.z - p.vz / speed * 0.6 }, p.kind === 'homing' ? 0xba92e0 : p.kind === 'bomb' ? 0xffb752 : 0xb4bac0, 0.12, 0.45, 0.7, -0.6, 1.5);
+    this.add(p.kind === 'bomb' ? {x:p.x,y:p.y+.55,z:p.z} : { x: p.x - p.vx / speed * 0.6, y: p.y - p.vy / speed * 0.6, z: p.z - p.vz / speed * 0.6 }, p.kind === 'homing' ? 0xba92e0 : p.kind === 'bomb' ? 0xffb752 : 0xb4bac0, p.kind === 'bomb' ? .055 : .12, p.kind === 'bomb' ? .2 : .45, .7, -.6, p.kind === 'bomb' ? 0 : 1.5);
   }
   drive(kart: KartState, id: string, dt: number) {
     const telemetry = drivingTelemetry(kart);

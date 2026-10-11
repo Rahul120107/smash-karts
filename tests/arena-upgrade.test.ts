@@ -41,9 +41,9 @@ describe('expanded collision-aligned arena', () => {
   });
   it('uses visible obstacle bounds for both kart contacts and weapon occlusion', () => {
     for (const w of WALLS.slice(4)) {
-      const k = kart(w.x, w.z); resolveWalls(k);
+      const k = { ...kart(w.x, w.z), y: w.base ?? 0 }; resolveWalls(k);
       expect(Math.abs(k.x - w.x) >= w.width / 2 + CONFIG.kartRadius - 1e-8 || Math.abs(k.z - w.z) >= w.depth / 2 + CONFIG.kartRadius - 1e-8).toBe(true);
-      expect(wallHit({ x: w.x - w.width - 2, y: 0.7, z: w.z }, { x: w.x + w.width + 2, y: 0.7, z: w.z })).not.toBeNull();
+      expect(wallHit({ x: w.x - w.width - 2, y: (w.base ?? 0) + 0.7, z: w.z }, { x: w.x + w.width + 2, y: (w.base ?? 0) + 0.7, z: w.z })).not.toBeNull();
     }
   });
 });

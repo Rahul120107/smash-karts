@@ -15,4 +15,4 @@ export const CONFIG = {
   airControl: 0.15,
 } as const;
 export const DT = 1 / CONFIG.tickRate;
-export const COLORS = [0xff7046, 0x50c9ef, 0xf5c747, 0xac86ee, 0x65d6a0, 0xef79b2, 0xa3c4e2, 0xe69e4b];
+export const COLORS = [0xf44349, 0x369bff, 0x9bef37, 0x9861f5, 0xffd344];

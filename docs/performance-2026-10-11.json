@@ -1,0 +1,61 @@
+{
+  "measuredOn": "2026-10-11",
+  "hardware": {
+    "command": "npx tsx scripts/profile-rendering.ts --hardware",
+    "os": "win32",
+    "cpu": "13th Gen Intel(R) Core(TM) i5-1334U",
+    "memoryGiB": 15.7,
+    "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x0000A7A1) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "viewport": "1920x1080",
+    "durationSeconds": 5,
+    "renderedBrowsers": 1,
+    "nativeWebSocketPeers": 7,
+    "players": 8,
+    "fps": 60.058262500641675,
+    "meanFrameMs": 16.65049833883083,
+    "p95FrameMs": 16.799999999999272,
+    "maxFrameMs": 16.80000000000109,
+    "sampledDrawCalls": 153,
+    "sampledTriangles": 52234,
+    "pixelQualityReduced": false,
+    "errors": [],
+    "status": "measured"
+  },
+  "softwareSingle": {
+    "renderer": "SwiftShader",
+    "viewport": "1920x1080",
+    "renderedBrowsers": 1,
+    "fps": 5.728142363418501,
+    "meanFrameMs": 174.57666666706402,
+    "p95FrameMs": 316.6999999999971,
+    "maxFrameMs": 549.9999999999964,
+    "sampledDrawCalls": 52,
+    "sampledTriangles": 35868,
+    "pixelQualityReduced": true
+  },
+  "softwareEight": {
+    "renderer": "SwiftShader",
+    "viewportPerBrowser": "640x720",
+    "renderedBrowsers": 8,
+    "roundedFpsRange": [1, 2],
+    "sampledDrawCallRange": [71, 143],
+    "sampledTriangleRange": [38554, 47858],
+    "maxFrameGapMsRange": [816.6, 949.9]
+  },
+  "server": {
+    "simulatedSeconds": 180,
+    "players": 8,
+    "wallMilliseconds": 864,
+    "tickAndSnapshotP95Milliseconds": 0.229,
+    "peakProjectiles": 43,
+    "averageSnapshotBytes": 10112,
+    "estimatedOutboundKiBps": 1580,
+    "totalEliminations": 8,
+    "phase": "finished"
+  },
+  "limits": [
+    "A brief local moving-camera sample, not a whole-map or worst-case combat benchmark.",
+    "One rendered hardware browser with seven native clients, not eight physical devices.",
+    "No hosted Render or WAN performance was measured."
+  ]
+}

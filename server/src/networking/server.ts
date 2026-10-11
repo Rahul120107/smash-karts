@@ -8,11 +8,13 @@ import { CONFIG, DT } from '../../../shared/src/config.js';
 import type { ServerMessage } from '../../../shared/src/types.js';
 import { RoomManager } from '../rooms/manager.js';
 import { parseMessage } from './validation.js';
+import { encodeSnapshot } from './serialization.js';
 
 export interface ServerOptions { port?: number; host?: string; capacity?: number; duration?: number; staticDir?: string; allowedOrigins?: string[] }
 export async function startServer(options: ServerOptions = {}) {
   const rooms = new RoomManager(options.capacity, options.duration);
   const clients = new Map<string, WebSocket>();
+  const lastEvents = new Map<string, number>();
   const root = resolve(options.staticDir ?? 'client/dist');
   const http = createServer(async (req, res) => {
     if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, rooms: rooms.rooms.size, players: rooms.memberships.size })); return; }
@@ -39,11 +41,15 @@ export async function startServer(options: ServerOptions = {}) {
   function send(ws: WebSocket, m: ServerMessage) { if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 256000) ws.send(JSON.stringify(m)); }
   function broadcast() {
     for (const room of rooms.rooms.values()) {
-      const message: ServerMessage = { type: 'snapshot', state: room.simulation.snapshot(room.code, room.host, rooms.capacity) };
-      const encoded = JSON.stringify(message);
+      const state = room.simulation.snapshot(room.code, room.host, rooms.capacity);
+      const cache = new Map<number, string>();
       for (const id of room.simulation.players.keys()) {
         const ws = clients.get(id);
-        if (ws?.readyState === WebSocket.OPEN && ws.bufferedAmount < 256000) ws.send(encoded);
+        if (ws?.readyState === WebSocket.OPEN && ws.bufferedAmount < 256000) {
+          const last = lastEvents.get(id) ?? 0;
+          let encoded = cache.get(last); if (!encoded) { encoded = encodeSnapshot(state, last); cache.set(last, encoded); }
+          ws.send(encoded); lastEvents.set(id, state.events.at(-1)?.id ?? last);
+        }
       }
     }
   }
@@ -60,16 +66,17 @@ export async function startServer(options: ServerOptions = {}) {
         switch (m.type) {
           case 'create': case 'join': {
             const room = m.type === 'create' ? rooms.create(id, m.name) : rooms.join(id, m.name, m.code);
+            lastEvents.delete(id);
             send(ws, { type: 'welcome', id, code: room.code }); broadcast(); break;
           }
-          case 'leave': rooms.leave(id); send(ws, { type: 'left' }); broadcast(); break;
+          case 'leave': rooms.leave(id); lastEvents.delete(id); send(ws, { type: 'left' }); broadcast(); break;
           case 'start': rooms.start(id); broadcast(); break;
           case 'input': rooms.roomFor(id)?.simulation.enqueue(id, m.commands); break;
           case 'ping': send(ws, { type: 'pong', at: m.at }); break;
         }
       } catch (error) { send(ws, { type: 'error', message: error instanceof Error ? error.message : 'Request failed.' }); }
     });
-    ws.on('close', () => { clearInterval(heartbeat); rooms.leave(id); clients.delete(id); broadcast(); });
+    ws.on('close', () => { clearInterval(heartbeat); rooms.leave(id); clients.delete(id); lastEvents.delete(id); broadcast(); });
     ws.on('error', error => console.error('WebSocket transport error:', error.message));
   });
   let previous = performance.now(), accumulator = 0, networkTicks = 0;
@@ -77,7 +84,10 @@ export async function startServer(options: ServerOptions = {}) {
     const now = performance.now(); accumulator += Math.min((now - previous) / 1000, 0.25); previous = now;
     let steps = 0;
     while (accumulator >= DT && steps++ < 15) {
-      for (const room of rooms.rooms.values()) room.simulation.step();
+      for (const room of rooms.rooms.values()) {
+        const wasPlaying = room.simulation.phase === 'playing'; room.simulation.step();
+        if (wasPlaying && room.simulation.phase === 'finished') room.lastActivity = Date.now();
+      }
       accumulator -= DT;
       if (++networkTicks % (CONFIG.tickRate / CONFIG.snapshotRate) === 0) broadcast();
     }

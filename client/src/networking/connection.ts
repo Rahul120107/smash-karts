@@ -31,12 +31,16 @@ export class Connection {
       try { message = JSON.parse(event.data as string) as ServerMessage; } catch { this.update({ error: 'The server sent an unreadable message.' }); return; }
       if (message.type === 'welcome') {
         if (this.room) this.room.code = message.code;
-        this.lastEvent = 0; this.update({ id: message.id, pending: false });
+        this.lastEvent = 0; this.update({ id: message.id, pending: false, feed: [] });
       } else if (message.type === 'snapshot') {
         const fresh = message.state.events.filter(e => e.id > this.lastEvent);
         for (const e of fresh) this.lastEvent = Math.max(this.lastEvent, e.id);
-        this.update({ snapshot: message.state, feed: [...this.state.feed, ...fresh.filter(e => e.kind === 'elimination')].slice(-4) });
-        for (const callback of this.snapshotListeners) callback(message.state);
+        const previous = this.state.snapshot;
+        const retained = previous?.code === message.state.code && previous.tick <= message.state.tick ? previous.events.filter(e => e.at <= message.state.time && message.state.time - e.at < 0.75) : [];
+        const ids = new Set(retained.map(e => e.id));
+        const snapshot = { ...message.state, events: [...retained, ...message.state.events.filter(e => !ids.has(e.id))].slice(-256) };
+        this.update({ snapshot, feed: [...this.state.feed, ...fresh.filter(e => e.kind === 'elimination')].slice(-4) });
+        for (const callback of this.snapshotListeners) callback(snapshot);
       } else if (message.type === 'error') {
         if (!this.state.id) this.room = null;
         this.update({ error: message.message, pending: false });

@@ -5,12 +5,12 @@ import type { Input, KartState, PlayerState, Snapshot } from '../../../shared/sr
 
 export class Prediction {
   kart: KartState | null = null; sequence = 0; private pending: Input[] = [];
-  private phase = ''; private tick = -1; private alive = false;
+  private phase = ''; private tick = -1; private alive = false; private id = '';
   reconcile(state: Snapshot, id: string) {
     const player = state.players.find(p => p.id === id); if (!player) return;
-    const reset = state.phase !== this.phase || state.tick < this.tick;
+    const reset = id !== this.id || state.phase !== this.phase || state.tick < this.tick;
     if (reset) { this.pending = []; this.sequence = player.ack; }
-    this.phase = state.phase; this.tick = state.tick;
+    this.id = id; this.phase = state.phase; this.tick = state.tick;
     if (!this.alive && player.health > 0) this.pending = [];
     this.alive = player.health > 0;
     this.pending = this.pending.filter(c => c.seq > player.ack);
@@ -30,7 +30,8 @@ interface History { received: number; snapshot: Snapshot }
 export class Interpolation {
   private history: History[] = [];
   push(snapshot: Snapshot) {
-    if (this.history.at(-1)?.snapshot.tick! > snapshot.tick) this.history = [];
+    const last = this.history.at(-1)?.snapshot;
+    if (last && (last.tick > snapshot.tick || last.code !== snapshot.code)) this.history = [];
     this.history.push({ snapshot, received: performance.now() });
     if (this.history.length > 12) this.history.shift();
   }

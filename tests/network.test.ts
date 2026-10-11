@@ -30,6 +30,29 @@ async function setup(duration = 180) {
   return { a, b, idA: welcomeA.id, idB: welcomeB.id, code: welcomeA.code };
 }
 describe('real WebSocket multiplayer integration', () => {
+  it('disconnects a message flood and preserves other room members', async () => {
+    const { a, b, idB } = await setup();
+    const closed = new Promise<number>(ok => a.ws.once('close', code => ok(code)));
+    for (let i = 0; i < 120; i++) a.send({ type: 'ping', at: i });
+    expect(await closed).toBe(1008); const state = await b.state(s => s.players.length === 1 && s.host === idB);
+    expect(state.players[0]!.health).toBe(100);
+  });
+  it('runs eight simultaneous input streams and refuses a ninth player at capacity', async () => {
+    const { a, b, code } = await setup(); const participants = [a, b];
+    for (let i = 2; i < 8; i++) {
+      const peer = await Peer.open(server!.port); peers.push(peer); participants.push(peer);
+      peer.send({ type: 'join', name: `Player ${i + 1}`, code }); await peer.wait(m => m.type === 'welcome');
+    }
+    const extra = await Peer.open(server!.port); peers.push(extra); extra.send({ type: 'join', name: 'Ninth', code }); await extra.wait(m => m.type === 'error' && m.message.includes('full'));
+    a.send({ type: 'start' }); await a.state(s => s.phase === 'playing');
+    const sequence = participants.map(() => 0);
+    const stream = setInterval(() => participants.forEach((peer, index) => peer.send({ type: 'input', commands: Array.from({ length: 3 }, () => ({ ...NEUTRAL, seq: ++sequence[index]!, throttle: 1, steer: index % 2 ? 0.25 : -0.25 })) })), 50);
+    try {
+      const states = await Promise.all(participants.map(peer => peer.state(s => s.tick >= 45 && s.players.every(p => p.ack >= 30))));
+      for (const state of states) { expect(state.players).toHaveLength(8); expect(state.players.every(p => Number.isFinite(p.x) && Number.isFinite(p.z) && p.health === 100)).toBe(true); }
+      expect(new Set(states.map(s => s.tick)).size).toBe(1);
+    } finally { clearInterval(stream); }
+  });
   it('creates/joins, rejects non-host starts and combat claims, moves from input, and transfers host on disconnect', async () => {
     const { a, b, idA, idB, code } = await setup(); expect((await b.state(s => s.players.length === 2)).code).toBe(code);
     b.send({ type: 'start' }); await b.wait(m => m.type === 'error' && m.message.includes('host'));

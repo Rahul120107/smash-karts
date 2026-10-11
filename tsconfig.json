@@ -6,5 +6,5 @@
     "resolveJsonModule": true, "noUncheckedIndexedAccess": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["client/src", "client/vite.config.ts", "server/src", "shared/src", "tests", "playwright.config.ts", "vitest.config.ts"]
+  "include": ["client/src", "client/vite.config.ts", "server/src", "shared/src", "tests", "scripts", "playwright.config.ts", "vitest.config.ts"]
 }

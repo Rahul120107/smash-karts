@@ -33,7 +33,7 @@ export class ArenaGame {
   private projectiles = new Map<number, THREE.Group>(); private projectileTemplates = new Map<string, THREE.Group>();
   private pickupTemplate = createPickup(); private particles: Particles; readonly audio = new GameAudio();
   private unsubscribe: () => void; private resize: ResizeObserver; private previous = performance.now();
-  private accumulator = 0; private outgoing: Input[] = []; private lastEvent = 0; private lastPhase = '';
+  private accumulator = 0; private outgoing: Input[] = []; private lastEvent = 0; private lastPhase = ''; private lastCode = '';
   private renderYaw = 0; private cameraReady = false; private lastFrame = 0;
   private aim = new THREE.Vector3(); private cameraTarget = new THREE.Vector3();
   constructor(private container: HTMLDivElement) {
@@ -57,8 +57,9 @@ export class ArenaGame {
   private updateSize() { const width = this.container.clientWidth, height = this.container.clientHeight; if (!width || !height) return; this.camera.aspect = width / height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width, height); }
   private receive(state: Snapshot) {
     const id = connection.state.id;
-    if (state.phase !== this.lastPhase) { this.outgoing = []; this.accumulator = 0; this.cameraReady = false; }
-    this.lastPhase = state.phase;
+    if (state.code !== this.lastCode) this.lastEvent = 0;
+    if (state.phase !== this.lastPhase || state.code !== this.lastCode) { this.outgoing = []; this.accumulator = 0; this.cameraReady = false; }
+    this.lastPhase = state.phase; this.lastCode = state.code;
     if (id) this.prediction.reconcile(state, id);
     this.interpolation.push(state);
     const present = new Set(state.players.map(p => p.id));

@@ -39,6 +39,10 @@ describe('projectile behaviors', () => {
     const { world, a, b } = duel(); b.z = -10; equip(a, 'homing'); activate(world, a);
     expect(world.projectiles.values().next().value!.target).toBeNull(); advance(world, 5.1); expect(world.projectiles.size).toBe(0);
   });
+  it('homing missiles hit nearby targets approaching from an angle without orbiting', () => {
+    const { world, a, b } = duel(); b.x = -11; b.z = 6; equip(a, 'homing'); activate(world, a); advance(world, 0.8);
+    expect(b.health).toBeLessThan(100); expect(world.projectiles.size).toBe(0);
+  });
   it('mines arm after a delay, trigger only on enemies, and explode once', () => {
     const { world, a, b } = duel(); equip(a, 'mine'); activate(world, a);
     const mine = world.projectiles.values().next().value!; b.z = mine.z;
@@ -85,9 +89,16 @@ describe('damage, power-ups, and match rules', () => {
     damage(world, b, 40, a.id); expect(b.health).toBe(100); advance(world, WEAPONS.shield.duration + 0.01);
     damage(world, b, 40, a.id); expect(b.health).toBe(60);
   });
-  it('boost activation sets a bounded duration', () => {
-    const { world, a } = duel(); equip(a, 'boost'); activate(world, a);
-    expect(a.boostUntil).toBe(WEAPONS.boost.duration); advance(world, WEAPONS.boost.duration + 0.1); expect(a.boostUntil).toBeLessThan(world.time);
+  it('boost increases actual server movement speed and expires at a bounded duration', () => {
+    const { world, a, b } = duel(), baseline = duel();
+    a.z = -20; baseline.a.z = -20; b.x = -30; baseline.b.x = -30;
+    equip(a, 'boost'); activate(world, a); expect(a.boostUntil).toBe(WEAPONS.boost.duration);
+    for (let i = 0; i < 100; i++) {
+      const command = { seq: i + 1, throttle: 1, steer: 0, fire: false, drift: false };
+      world.enqueue(a.id, [command]); baseline.world.enqueue(baseline.a.id, [command]); world.step(); baseline.world.step();
+    }
+    expect(a.vz).toBeGreaterThan(baseline.a.vz * 1.4); expect(a.z).toBeGreaterThan(baseline.a.z + 4);
+    advance(world, WEAPONS.boost.duration); expect(a.boostUntil).toBeLessThan(world.time);
   });
   it('eliminates once, scores the attacker, respawns, and protects the new spawn', () => {
     const { world, a, b } = duel(); damage(world, b, 100, a.id);

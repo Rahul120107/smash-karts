@@ -2,6 +2,7 @@ import { CONFIG, DT } from '../../../shared/src/config.js';
 import { groundHeight } from '../../../shared/src/arena.js';
 import { clamp, distance, lerp, segmentSphere } from '../../../shared/src/math.js';
 import type { Projectile, Vec3 } from '../../../shared/src/types.js';
+import { WEAPONS } from '../../../shared/src/weapons.js';
 import { damage, explode } from '../combat/damage.js';
 import { terrainHit, wallHit } from '../collisions/projectile.js';
 import type { CombatWorld } from '../simulation/world.js';
@@ -12,7 +13,9 @@ function steerHoming(world: CombatWorld, p: Projectile): void {
   const dx = target.x - p.x, dy = target.y + 0.65 - p.y, dz = target.z - p.z;
   const length = Math.hypot(dx, dy, dz), speed = Math.hypot(p.vx, p.vy, p.vz);
   if (length < 0.01) return;
-  const mix = 1 - Math.exp(-3.5 * DT);
+  // Tighten the approach near the target so finite turning doesn't create a permanent orbit.
+  const turnRate = WEAPONS.homing.turnRate * (1 + 3 / Math.max(1, length));
+  const mix = 1 - Math.exp(-turnRate * DT);
   p.vx = lerp(p.vx, dx / length * speed, mix); p.vy = lerp(p.vy, dy / length * speed, mix); p.vz = lerp(p.vz, dz / length * speed, mix);
   const norm = Math.hypot(p.vx, p.vy, p.vz) || 1;
   p.vx *= speed / norm; p.vy *= speed / norm; p.vz *= speed / norm;

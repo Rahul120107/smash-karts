@@ -30,8 +30,8 @@ test('two independent browser sessions drive, collect, fire, finish, replay, and
   const code = await lobby(a, b);
   await a.screenshot({ path: testInfo.outputPath('lobby.png') });
   await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
-  await a.locator('canvas').click({ position: { x: 600, y: 400 } }); await a.keyboard.down('KeyW');
-  await expect.poll(() => seenA.latest?.players.find(p => p.name === 'Roadrunner')?.weapon).not.toBeNull();
+  await a.getByRole('button', { name: 'Mute audio' }).click(); await a.keyboard.down('KeyW');
+  await expect.poll(() => !!seenA.latest?.players.find(p => p.name === 'Roadrunner')?.weapon).toBe(true);
   await a.keyboard.up('KeyW'); await expect(a.getByTestId('equipped-weapon')).not.toHaveText('Find a weapon');
   const player = seenA.latest!.players.find(p => p.name === 'Roadrunner')!;
   expect(player.z).toBeLessThan(20); expect(player.ack).toBeGreaterThan(0);
@@ -56,7 +56,7 @@ test('all eight weapon categories render and synchronize combat between browsers
   await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
   await a.locator('canvas').click({ position: { x: 600, y: 400 } });
   const shooter = [...world.players.values()].find(p => p.name === 'Roadrunner')!, target = [...world.players.values()].find(p => p.name === 'Dusty')!;
-  for (const weapon of WEAPON_IDS) {
+  for (const weapon of WEAPON_IDS) await test.step(WEAPONS[weapon].label, async () => {
     // Server fixtures arrange reproducible shots. The browser activates them through ordinary Space input.
     world.projectiles.clear(); world.events = [];
     Object.assign(shooter, { x: -8, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, weapon, ammo: WEAPONS[weapon].ammo, nextFire: 0 });
@@ -69,12 +69,51 @@ test('all eight weapon categories render and synchronize combat between browsers
     await expect.poll(() => seenB.history.some(s => s.events.some(e => e.kind === 'fire' && e.weapon === weapon && e.at >= since))).toBe(true);
     if (weapon === 'shield') { await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.shieldUntil ?? 0).toBeGreaterThan(since); }
     else if (weapon === 'boost') { await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.boostUntil ?? 0).toBeGreaterThan(since); }
-    else { await expect.poll(() => seenB.latest?.players.find(p => p.id === target.id)?.health ?? 100).toBeLessThan(100); }
+    else { await expect.poll(() => seenB.history.some(s => s.time >= since && s.players.some(p => p.id === target.id && p.health < 100))).toBe(true); }
     expect(seenA.latest?.players.find(p => p.id === shooter.id)?.ammo).toBeLessThan(WEAPONS[weapon].ammo);
     if (weapon === 'rocket') await a.screenshot({ path: testInfo.outputPath('rocket-combat.png') });
-  }
+    await a.waitForTimeout(150); // Flush the final key-up batch before arranging the next independent fixture.
+  });
   expect(world.projectiles.size).toBeLessThan(20);
+  await test.step('elimination, live score, respawn, and protection', async () => {
+    world.projectiles.clear();
+    Object.assign(shooter, { x: -8, z: 0, yaw: 0, health: 100, invulnerableUntil: 0, weapon: 'machineGun', ammo: 30, nextFire: 0 });
+    Object.assign(target, { x: -8, z: 6, health: 12, invulnerableUntil: 0, shieldUntil: 0 });
+    await expect(a.getByTestId('equipped-weapon')).toHaveText('Machine gun');
+    const score = shooter.score, since = world.time; await a.keyboard.down('Space');
+    await expect(b.getByText('KART ELIMINATED')).toBeVisible(); await a.keyboard.up('Space');
+    await expect.poll(() => seenA.latest?.players.find(p => p.id === shooter.id)?.score).toBe(score + 1);
+    await expect(b.getByTestId('health')).toHaveText('100 / 100');
+    expect(seenB.history.some(s => s.time >= since && s.players.some(p => p.id === target.id && p.health === 100 && p.invulnerableUntil > s.time))).toBe(true);
+    expect(target.deaths).toBeGreaterThan(0);
+  });
   await a.screenshot({ path: testInfo.outputPath('weapons-tested.png') });
+});
+test('prediction remains playable with 120 ms simulated network round-trip delay', async ({ browser }) => {
+  const ctx = await browser.newContext(); contexts.push(ctx); const page = await ctx.newPage();
+  const pending = new Set<ReturnType<typeof setTimeout>>(); let received: Snapshot | null = null; let routing = true;
+  await page.routeWebSocket('**/ws', route => {
+    const upstream = route.connectToServer();
+    const later = (fn: () => void) => { if (!routing) return; const timer = setTimeout(() => { pending.delete(timer); if (routing) fn(); }, 60); pending.add(timer); };
+    route.onMessage(message => later(() => upstream.send(message)));
+    upstream.onMessage(message => later(() => {
+      const parsed = JSON.parse(message.toString()) as ServerMessage; if (parsed.type === 'snapshot') received = parsed.state;
+      route.send(message);
+    }));
+  });
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}`); await page.getByLabel('YOUR NICKNAME').fill('Latency racer');
+    await page.getByRole('button', { name: 'Create room' }).click(); const code = await page.getByTestId('room-code').innerText();
+    server.rooms.rooms.get(code)!.simulation.duration = 30;
+    await page.getByRole('button', { name: 'Start match' }).click(); await expect(page.getByTestId('match-timer')).toBeVisible();
+    await page.locator('canvas').click({ position: { x: 600, y: 400 } }); await page.keyboard.down('KeyW');
+    await expect(page.getByTestId('equipped-weapon')).not.toHaveText('Find a weapon'); await page.keyboard.up('KeyW');
+    await expect.poll(() => received?.players[0]?.ack ?? 0).toBeGreaterThan(20);
+    const latest = () => received as Snapshot | null;
+    expect(latest()!.players[0]!.z).toBeLessThan(20);
+    await expect.poll(async () => Number((await page.locator('.latency').innerText()).replace(' ms', ''))).toBeGreaterThanOrEqual(110);
+  } finally { routing = false; for (const timer of pending) clearTimeout(timer); }
 });
 test('invalid room codes and disconnected servers give usable feedback', async ({ browser }) => {
   const ctx = await browser.newContext(); contexts.push(ctx); const page = await ctx.newPage(); observe(page);

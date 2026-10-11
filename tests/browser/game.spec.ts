@@ -1,7 +1,8 @@
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 import { startServer } from '../../server/src/networking/server.js';
 import { WEAPON_IDS, WEAPONS } from '../../shared/src/weapons.js';
-import type { ServerMessage, Snapshot } from '../../shared/src/types.js';
+import { groundHeight } from '../../shared/src/arena.js';
+import type { ClientMessage, Input, ServerMessage, Snapshot } from '../../shared/src/types.js';
 import { writeFile } from 'node:fs/promises';
 let server: Awaited<ReturnType<typeof startServer>>;
 let contexts: BrowserContext[] = [];
@@ -9,13 +10,26 @@ const errors: string[] = [];
 test.beforeEach(async () => { server = await startServer({ port: 0, host: '127.0.0.1', duration: 12 }); errors.length = 0; });
 test.afterEach(async () => { await Promise.all(contexts.splice(0).map(ctx => ctx.close())); await server.close(); expect(errors).toEqual([]); });
 function observe(page: Page) {
-  const observed: { latest: Snapshot | null; history: Snapshot[] } = { latest: null, history: [] };
+  const observed: { latest: Snapshot | null; history: Snapshot[]; inputs: Input[] } = { latest: null, history: [], inputs: [] };
   page.on('pageerror', error => errors.push(error.message));
-  page.on('websocket', ws => ws.on('framereceived', frame => {
+  page.on('websocket', ws => {
+    ws.on('framesent', frame => {
+      const message = JSON.parse(frame.payload.toString()) as ClientMessage;
+      if (message.type === 'input') { observed.inputs.push(...message.commands); if (observed.inputs.length > 4096) observed.inputs.splice(0, observed.inputs.length - 4096); }
+    });
+    ws.on('framereceived', frame => {
     const message = JSON.parse(frame.payload.toString()) as ServerMessage;
     if (message.type === 'snapshot') { observed.latest = message.state; observed.history.push(message.state); if (observed.history.length > 1000) observed.history.shift(); }
-  }));
+    });
+  });
   return observed;
+}
+async function appliedKey(page: Page, observed: ReturnType<typeof observe>, id: string, key: string, down: boolean, matches: (input: Input) => boolean) {
+  const boundary = observed.inputs.at(-1)?.seq ?? 0;
+  if (down) await page.keyboard.down(key); else await page.keyboard.up(key);
+  let seq = 0;
+  await expect.poll(() => { seq = observed.inputs.find(input => input.seq > boundary && matches(input))?.seq ?? 0; return seq; }).toBeGreaterThan(0);
+  await expect.poll(() => observed.latest?.players.find(p => p.id === id)?.ack ?? 0).toBeGreaterThanOrEqual(seq);
 }
 async function lobby(host: Page, guest: Page) {
   await host.goto(`http://127.0.0.1:${server.port}`); await guest.goto(`http://127.0.0.1:${server.port}`);
@@ -25,6 +39,20 @@ async function lobby(host: Page, guest: Page) {
   await expect(host.locator('.lobby-players')).toContainText('Dusty'); await expect(guest.locator('.lobby-players')).toContainText('Roadrunner');
   return code;
 }
+test('idle arena redraws on resizing and room changes without continuously consuming GPU frames', async ({ browser }, testInfo) => {
+  const context = await browser.newContext(); contexts.push(context); const page = await context.newPage(); observe(page);
+  await page.goto(`http://127.0.0.1:${server.port}`); await expect(page.getByLabel('YOUR NICKNAME')).toBeVisible();
+  const rendered = async () => Number(await page.locator('.game-canvas').getAttribute('data-idle-renders'));
+  await expect.poll(rendered).toBeGreaterThan(0);
+  const initial = await rendered(); await page.waitForTimeout(600); expect(await rendered()).toBe(initial);
+  await page.setViewportSize({ width: 640, height: 720 }); await expect.poll(rendered).toBeGreaterThan(initial);
+  const smallFrames = await rendered(); await page.setViewportSize({ width: 1280, height: 800 }); await expect.poll(rendered).toBeGreaterThan(smallFrames);
+  await page.screenshot({ path: testInfo.outputPath('main-menu.png') }); const beforeJoin = await rendered();
+  await page.getByLabel('YOUR NICKNAME').fill('Idle racer'); await page.getByRole('button', { name: 'Create room' }).click();
+  await expect(page.getByTestId('room-code')).toBeVisible(); await expect.poll(rendered).toBeGreaterThan(beforeJoin);
+  const lobbyFrames = await rendered(); await page.waitForTimeout(600); expect(await rendered()).toBe(lobbyFrames);
+});
+
 test('two independent browser sessions drive, collect, fire, finish, replay, and leave', async ({ browser }, testInfo) => {
   const ctxA = await browser.newContext(), ctxB = await browser.newContext(); contexts.push(ctxA, ctxB);
   const a = await ctxA.newPage(), b = await ctxB.newPage(); const seenA = observe(a), seenB = observe(b);
@@ -64,16 +92,16 @@ test('all eight weapon categories render and synchronize combat between browsers
     Object.assign(target, { x: weapon === 'homing' ? -11 : -8, y: 0, z: weapon === 'mine' ? -1.8 : weapon === 'bomb' ? 19 : 6, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, respawnAt: 0 });
     await expect(a.getByTestId('equipped-weapon')).toHaveText(WEAPONS[weapon].label);
     const since = world.time;
+    let fireId = 0;
     await a.keyboard.down('Space');
-    await expect.poll(() => world.events.some(e => e.kind === 'fire' && e.weapon === weapon && e.at >= since)).toBe(true);
-    await a.keyboard.up('Space');
-    await expect.poll(() => seenB.history.some(s => s.events.some(e => e.kind === 'fire' && e.weapon === weapon && e.at >= since))).toBe(true);
+    await expect.poll(() => { fireId = world.events.find(e => e.kind === 'fire' && e.weapon === weapon && e.at >= since)?.id ?? 0; return fireId; }).toBeGreaterThan(0);
+    await appliedKey(a, seenA, shooter.id, 'Space', false, input => !input.fire);
+    await expect.poll(() => seenB.history.some(s => s.events.some(e => e.id === fireId))).toBe(true);
     if (weapon === 'shield') { await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.shieldUntil ?? 0).toBeGreaterThan(since); }
     else if (weapon === 'boost') { await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.boostUntil ?? 0).toBeGreaterThan(since); }
     else { await expect.poll(() => seenB.history.some(s => s.time >= since && s.players.some(p => p.id === target.id && p.health < 100))).toBe(true); }
     expect(seenA.latest?.players.find(p => p.id === shooter.id)?.ammo).toBeLessThan(WEAPONS[weapon].ammo);
     if (weapon === 'rocket') await a.screenshot({ path: testInfo.outputPath('rocket-combat.png') });
-    await a.waitForTimeout(150); // Flush the final key-up batch before arranging the next independent fixture.
   });
   expect(world.projectiles.size).toBeLessThan(20);
   await test.step('elimination, live score, respawn, and protection', async () => {
@@ -90,6 +118,67 @@ test('all eight weapon categories render and synchronize combat between browsers
   });
   await a.screenshot({ path: testInfo.outputPath('weapons-tested.png') });
 });
+test('ramp-side stability, legitimate jumps and assisted fire agree across two browsers', async ({ browser }, testInfo) => {
+  const ctxA = await browser.newContext(), ctxB = await browser.newContext({ viewport: { width: 640, height: 720 } }); contexts.push(ctxA, ctxB);
+  const a = await ctxA.newPage(), b = await ctxB.newPage(), seenA = observe(a), seenB = observe(b);
+  const code = await lobby(a, b), world = server.rooms.rooms.get(code)!.simulation; world.duration = 90; world.random = () => 0.5;
+  await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
+  await a.locator('canvas').click({ position: { x: 600, y: 400 } });
+  const shooter = [...world.players.values()].find(p => p.name === 'Roadrunner')!, victim = [...world.players.values()].find(p => p.name === 'Dusty')!;
+  Object.assign(shooter, { x: -26.55, z: 0, y: 0, yaw: Math.PI / 2, vx: 20, vy: 0, vz: 0 });
+  const sideSince = world.time; await a.keyboard.down('KeyW');
+  await expect.poll(() => seenA.latest?.time ?? 0).toBeGreaterThan(sideSince + 0.6);
+  expect(seenB.history.filter(s => s.time > sideSince + 0.05).every(s => s.players.find(p => p.id === shooter.id)!.y === 0)).toBe(true);
+  await expect.poll(async () => Number(await a.locator('.game-canvas').getAttribute('data-prediction-y'))).toBe(0);
+  await appliedKey(a, seenA, shooter.id, 'KeyW', false, input => input.throttle === 0);
+  await appliedKey(a, seenA, shooter.id, 'KeyW', true, input => input.throttle === 1);
+  Object.assign(shooter, { x: -23, z: -8, y: groundHeight(-23, -8), yaw: 0, vx: 0, vy: 0, vz: 21 });
+  const jumpSince = world.time;
+  try { await expect.poll(() => seenB.history.some(s => s.time > jumpSince && s.players.some(p => p.id === shooter.id && p.vy > 1))).toBe(true); }
+  catch (error) {
+    const positions = seenB.history.filter(s => s.time > jumpSince).map(s => ({ time: s.time, player: s.players.find(p => p.id === shooter.id) }));
+    await testInfo.attach('ramp-state', { body: JSON.stringify({ shooter, positions }), contentType: 'application/json' }); throw error;
+  }
+  await expect.poll(() => seenA.latest?.players.find(p => p.id === shooter.id)?.z ?? -100).toBeGreaterThan(10);
+  await appliedKey(a, seenA, shooter.id, 'KeyW', false, input => input.throttle === 0);
+  const jumpHeights = seenB.history.filter(s => s.time > jumpSince).map(s => s.players.find(p => p.id === shooter.id)!.y);
+  expect(Math.max(...jumpHeights)).toBeGreaterThan(2.6); expect(Math.max(...jumpHeights)).toBeLessThan(4);
+  await expect.poll(async () => Number(await a.locator('.game-canvas').getAttribute('data-prediction-y'))).toBe(0);
+  Object.assign(shooter, { x: -8, z: 0, y: 0, yaw: 0, vx: 0, vy: 0, vz: 0, weapon: 'machineGun', ammo: 30, nextFire: 0, invulnerableUntil: 0 });
+  Object.assign(victim, { x: -6.4, z: 8, y: 0, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0 });
+  await expect(a.getByTestId('aim-feedback')).toHaveText('TRACKING Dusty');
+  await a.screenshot({ path: testInfo.outputPath('assisted-fire.png') });
+  await a.keyboard.down('Space'); await expect.poll(() => seenB.latest?.players.find(p => p.id === victim.id)?.health ?? 100).toBeLessThan(100);
+  await appliedKey(a, seenA, shooter.id, 'Space', false, input => !input.fire); world.projectiles.clear();
+  Object.assign(shooter, { x: 0, z: -8, yaw: 0 }); Object.assign(victim, { x: 0, z: 8, health: 100 });
+  await expect(a.getByTestId('aim-feedback')).toHaveText('ASSIST READY');
+  const blockedSince = world.time; await a.keyboard.down('Space');
+  await expect.poll(() => seenB.latest?.time ?? 0).toBeGreaterThan(blockedSince + 0.5); await a.keyboard.up('Space'); expect(victim.health).toBe(100);
+  const calls = Number(await a.locator('.game-canvas').getAttribute('data-draw-calls'));
+  expect(calls).toBeGreaterThan(0); expect(calls).toBeLessThan(180);
+  expect(Number(await a.locator('.game-canvas').getAttribute('data-audio-voices'))).toBeLessThanOrEqual(12);
+  await b.screenshot({ path: testInfo.outputPath('compact-hud.png') });
+  await b.setViewportSize({ width: 390, height: 720 });
+  const weaponBounds = await b.locator('.weapon-panel').boundingBox(), vitalsBounds = await b.locator('.vitals').boundingBox();
+  expect(weaponBounds!.x).toBeGreaterThanOrEqual(0); expect(weaponBounds!.x + weaponBounds!.width).toBeLessThanOrEqual(390);
+  expect(weaponBounds!.y).toBeGreaterThanOrEqual(vitalsBounds!.y + vitalsBounds!.height);
+  await b.screenshot({ path: testInfo.outputPath('narrow-hud.png') });
+});
+
+test('movement inputs continue while animation frames are paused', async ({ browser }) => {
+  const context = await browser.newContext(); contexts.push(context); const page = await context.newPage(), seen = observe(page);
+  await page.goto(`http://127.0.0.1:${server.port}`); await page.getByLabel('YOUR NICKNAME').fill('Render pause');
+  await page.getByRole('button', { name: 'Create room' }).click(); const code = await page.getByTestId('room-code').innerText(); server.rooms.rooms.get(code)!.simulation.duration = 30;
+  await page.getByRole('button', { name: 'Start match' }).click(); await expect(page.getByTestId('match-timer')).toBeVisible();
+  await page.locator('canvas').click({ position: { x: 600, y: 400 } });
+  const id = seen.latest!.players[0]!.id, initialAck = seen.latest!.players[0]!.ack;
+  await page.evaluate(() => { window.requestAnimationFrame = () => 0; });
+  await appliedKey(page, seen, id, 'KeyW', true, input => input.throttle === 1);
+  await expect.poll(() => seen.latest?.players[0]?.ack ?? 0).toBeGreaterThan(initialAck + 30);
+  expect(seen.latest!.players[0]!.z).toBeLessThan(25); expect(seen.latest!.players[0]!.y).toBe(0);
+  await appliedKey(page, seen, id, 'KeyW', false, input => input.throttle === 0);
+});
+
 test('prediction remains playable with 120 ms simulated network round-trip delay', async ({ browser }) => {
   const ctx = await browser.newContext(); contexts.push(ctx); const page = await ctx.newPage();
   const pending = new Set<ReturnType<typeof setTimeout>>(); let received: Snapshot | null = null; let routing = true;
@@ -174,7 +263,9 @@ test('eight independent browser players render and send input concurrently', asy
     await expect.poll(() => observations[i]!.latest?.players.every(p => p.ack >= 10 && Number.isFinite(p.x) && Number.isFinite(p.z))).toBe(true);
     await expect(pages[i]!.locator('canvas')).toBeVisible(); expect(measurements[i]!.frames).toBeGreaterThan(0);
   }
-  const report = measurements.map((m, index) => ({ browser: index + 1, ...m, framesPerSecond: Math.round(m.frames / m.elapsed * 1000) }));
+  const renderStats = await Promise.all(pages.map(page => page.locator('.game-canvas').evaluate(element => ({ drawCalls: Number((element as HTMLElement).dataset.drawCalls), triangles: Number((element as HTMLElement).dataset.triangles) }))));
+  for (const stats of renderStats) { expect(stats.drawCalls).toBeGreaterThan(0); expect(stats.drawCalls).toBeLessThan(240); }
+  const report = measurements.map((m, index) => ({ browser: index + 1, ...m, ...renderStats[index], framesPerSecond: Math.round(m.frames / m.elapsed * 1000) }));
   const output = testInfo.outputPath('eight-browser-performance.json'); await writeFile(output, JSON.stringify(report, null, 2));
   await testInfo.attach('eight-browser-performance', { path: output, contentType: 'application/json' });
 });

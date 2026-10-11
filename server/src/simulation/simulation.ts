@@ -6,6 +6,7 @@ import { activate } from '../weapons/activate.js';
 import { stepProjectiles } from '../weapons/projectiles.js';
 import { collectPickups } from './pickups.js';
 import type { CombatWorld } from './world.js';
+import { machineGunAim } from '../../../shared/src/aim.js';
 
 interface Controls { queue: Input[]; last: Input; lastReceived: number; highest: number }
 export class Simulation implements CombatWorld {
@@ -31,7 +32,7 @@ export class Simulation implements CombatWorld {
       return nearest(b) - nearest(a);
     })[0]!;
     Object.assign(p, spawn, { y: groundHeight(spawn.x, spawn.z), vx: 0, vy: 0, vz: 0, health: CONFIG.maxHealth, respawnAt: 0,
-      weapon: null, ammo: 0, nextFire: 0, invulnerableUntil: this.time + CONFIG.spawnProtection, shieldUntil: 0, boostUntil: 0 });
+      weapon: null, ammo: 0, nextFire: 0, invulnerableUntil: this.time + CONFIG.spawnProtection, shieldUntil: 0, boostUntil: 0, aimTarget: null });
     const c = this.controls.get(p.id)!; c.queue = []; c.last = { ...NEUTRAL }; c.lastReceived = -1;
   }
   start() {
@@ -62,12 +63,21 @@ export class Simulation implements CombatWorld {
       const command = c.queue.shift();
       if (command) { c.last = command; p.ack = command.seq; }
       const input = this.time - c.lastReceived <= CONFIG.inputTimeout ? c.last : NEUTRAL;
-      if (p.health <= 0) { if (this.time >= p.respawnAt) this.spawn(p); continue; }
-      moveKart(p, input, this.time < p.boostUntil);
-      if (input.fire) activate(this, p);
+      if (p.health <= 0) { if (this.time >= p.respawnAt) { this.spawn(p); this.emit({ kind: 'respawn', player: p.id, x: p.x, y: p.y + 0.3, z: p.z }); } continue; }
+      const wallImpact = moveKart(p, input, this.time < p.boostUntil);
+      if (wallImpact > 4) this.emit({ kind: 'collision', player: p.id, x: p.x, y: p.y + 0.4, z: p.z, radius: wallImpact });
     }
     const alive = [...this.players.values()].filter(p => p.health > 0);
-    for (let i = 0; i < alive.length; i++) for (let j = i + 1; j < alive.length; j++) collideKarts(alive[i]!, alive[j]!);
+    for (let pass = 0; pass < 3; pass++) for (let i = 0; i < alive.length; i++) for (let j = i + 1; j < alive.length; j++) {
+      const a = alive[i]!, b = alive[j]!, impact = collideKarts(a, b);
+      if (pass === 0 && impact > 4) this.emit({ kind: 'collision', player: a.id, target: b.id, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 0.4, z: (a.z + b.z) / 2, radius: impact });
+    }
+    // Aim uses every kart's current tick position, after movement/contact resolution.
+    for (const p of alive) {
+      p.aimTarget = p.weapon === 'machineGun' ? machineGunAim(p, alive, this.time).target?.id ?? null : null;
+      const c = this.controls.get(p.id)!;
+      if (this.time - c.lastReceived <= CONFIG.inputTimeout && c.last.fire) activate(this, p);
+    }
     stepProjectiles(this); collectPickups(this);
     this.events = this.events.filter(e => this.time - e.at < 0.75).slice(-256);
   }

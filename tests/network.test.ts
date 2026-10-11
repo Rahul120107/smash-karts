@@ -30,6 +30,21 @@ async function setup(duration = 180) {
   return { a, b, idA: welcomeA.id, idB: welcomeB.id, code: welcomeA.code };
 }
 describe('real WebSocket multiplayer integration', () => {
+  it('broadcasts server-selected machine-gun assistance and rejects client damage/target claims', async () => {
+    const { a, b, idA, idB, code } = await setup(); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
+    const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, victim = world.players.get(idB)!;
+    world.random = () => 0.5;
+    Object.assign(shooter, { x: -8, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(victim, { x: -6.4, z: 8, invulnerableUntil: 0 }); equip(shooter, 'machineGun');
+    const lock = await b.state(s => s.players.find(p => p.id === idA)?.aimTarget === idB); expect(lock.players.find(p => p.id === idB)!.health).toBe(100);
+    a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 1, fire: true, target: 'forged', damage: 10000 }] });
+    const hit = (s: Snapshot) => (s.players.find(p => p.id === idB)?.health ?? 100) < 100;
+    const [stateA, stateB] = await Promise.all([a.state(hit), b.state(hit)]);
+    expect(stateA.players.find(p => p.id === idB)!.health).toBe(88); expect(stateB.players.find(p => p.id === idB)!.health).toBe(88);
+    a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 2 }] });
+    expect(stateB.players.find(p => p.id === idA)!.ammo).toBeLessThan(30);
+    b.send({ type: 'eliminate', target: idA }); await b.wait(m => m.type === 'error' && m.message.includes('Unsupported'));
+    expect(shooter.health).toBe(100);
+  });
   it('sends a restart notice, clears membership, and shuts down idempotently', async () => {
     const { a, b } = await setup();
     const closed = [a, b].map(p => new Promise<number>(ok => p.ws.once('close', code => ok(code))));

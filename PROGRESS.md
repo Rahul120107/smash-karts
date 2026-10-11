@@ -62,3 +62,19 @@
 - Verified the complete Blueprint against Render's current official JSON schema and compared its parsed contents with the prior configuration: only the backend plan changed.
 - Rechecked 99 unit/integration tests and the compiled eight-client production multiplayer smoke test; all passed. Gameplay source and other service settings were preserved.
 - Updated README for free-service idle spin-down/cold starts. Actual Render deployment and performance on the free compute plan remain unverified.
+
+## Gameplay, physics and presentation upgrade — 2026-10-11
+
+- Reproduced ramp-side launch at 156 units/s and height above 266 after two seconds. Fixed shared ground support and horizontal ramp-face contacts; retained bounded crest jumps, non-bouncing landings, recovery, grip and low-restitution collisions.
+- Found a second crest/timestep alignment defect; using two previous approach grades now passes 64 launch-alignment cases. Flat/slow-slope/edge-fall/pileup/long-steering/prediction regressions pass.
+- Added server-selected machine-gun cone/range/line-of-sight targeting, velocity lead, bounded correction and spread. Server still owns bullet travel, damage, ammo and cooldowns. Real-peer and browser tests cover targeting, wall blocking and invalid client claims.
+- Added predicted contacts with bounded remote copies. Moved input sampling/prediction/packet generation off the render loop; browser test proves commands continue with animation frames paused.
+- Upgraded original procedural karts, materials, lighting, road surface/paint, cargo props, trees/sky and pickup models. Static geometry batches by material; particles/smoke/skids/shockwaves use bounded instanced pools.
+- Added speed/slip-controlled persistent engine/tyre loops, contact sounds and bounded combat voices. Source reuse, gating and cleanup regressions pass; human audible-quality assessment is pending.
+- Refreshed menus/lobby/HUD/results with consistent responsive arcade styling, speed/health/ammo/target cues, live standings, kill feed, urgent countdown, connection status and reduced-motion support. Inspected desktop/compact/narrow screenshots and fixed compact health-number wrapping.
+- Two software-rendering load attempts timed out. Static idle views and foreground quality fallback brought the final eight-browser load scenario within budget. Browser fixtures now await real input acknowledgements and compare event IDs to avoid release-delay and wire-time rounding races.
+- Final `npm run check` passed: TypeScript, both production builds, **129 tests / 13 files**, **all 10 Chromium scenarios**, and compiled eight-client production smoke. The full browser suite completed in 4.3 minutes; eight-browser load took about 72 seconds.
+- Final load observation: approximately **1 FPS** per window under eight concurrent software-WebGL clients at 640×720, **31–112 draw calls** and **7,100–10,352 triangles** per measured view. Smooth hardware-GPU / eight-device / WAN performance remains unverified.
+- Latest three-minute/eight-player simulation benchmark: **510 ms** total, **0.123 ms** p95 tick/snapshot, **36** peak projectiles, **6,538-byte** mean snapshot, **1,022 KiB/s** estimated room outbound, **55** eliminations. Development-machine measurements are not Render capacity guarantees.
+- Backend remains `plan: free` / one instance; frontend remains a free Static Site. Unchanged Blueprint passed the current official JSON schema. No dependency/stack replacement. Dependency audit found zero vulnerabilities.
+- README documents tuning, architecture and upgrading the existing deployment. The initial game is deployed according to the user; this upgrade has not been pushed/deployed by this work. Hosted acceptance, physical GPU performance, audible review and actual Linux signal delivery remain pending.

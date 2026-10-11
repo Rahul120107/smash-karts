@@ -5,6 +5,14 @@ import { moveKart, NEUTRAL } from '../shared/src/movement.js';
 import { duel } from './helpers.js';
 afterEach(() => vi.restoreAllMocks());
 describe('client prediction and reconciliation', () => {
+  it('predicts kart contacts without mutating server snapshots or launching either body', () => {
+    const { world, a, b } = duel(), prediction = new Prediction(); b.z = 1.4;
+    const snapshot = world.snapshot('ABCDE', a.id, 8), original = structuredClone(snapshot);
+    prediction.reconcile(snapshot, a.id); prediction.step({ ...NEUTRAL, seq: 1, throttle: 1 }, a, 0);
+    expect(prediction.kart!.z).toBeLessThan(0); expect(prediction.kart!.y).toBe(0); expect(prediction.kart!.vy).toBe(0); expect(snapshot).toEqual(original);
+    world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, throttle: 1 }]); world.step(); prediction.reconcile(world.snapshot('ABCDE', a.id, 8), a.id);
+    expect(prediction.kart!.z).toBeCloseTo(a.z, 8);
+  });
   it('replays only unacknowledged input on authoritative state after a delayed snapshot', () => {
     const { world, a } = duel(), prediction = new Prediction(); const initial = world.snapshot('ABCDE', a.id, 8);
     prediction.reconcile(initial, a.id);

@@ -1,29 +1,82 @@
 import * as THREE from 'three';
-import type { GameEvent } from '../../../shared/src/types.js';
-interface Particle { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; total: number; size: number }
+import { groundHeight } from '../../../shared/src/arena.js';
+import { drivingTelemetry } from '../../../shared/src/movement.js';
+import type { GameEvent, KartState, Projectile, Vec3 } from '../../../shared/src/types.js';
+interface Particle { position: THREE.Vector3; velocity: THREE.Vector3; color: THREE.Color; life: number; total: number; size: number; gravity: number; growth: number }
+interface Decal { x: number; y: number; z: number; yaw: number; life: number; size: number; color: THREE.Color }
+/** Fixed-capacity effects: particles, shockwaves and tyre marks cost at most three draw calls. */
 export class Particles {
-  private particles: Particle[] = []; private geometry = new THREE.IcosahedronGeometry(1, 0);
-  private materials = new Map<number, THREE.MeshBasicMaterial>();
-  constructor(private scene: THREE.Scene) {}
+  readonly capacity = 512;
+  private pool: Particle[] = Array.from({ length: this.capacity }, () => ({ position: new THREE.Vector3(), velocity: new THREE.Vector3(), color: new THREE.Color(), life: 0, total: 1, size: 0, gravity: 0, growth: 0 }));
+  private skids: Decal[] = Array.from({ length: 256 }, () => ({ x: 0, y: 0, z: 0, yaw: 0, life: 0, size: 1, color: new THREE.Color(0x16232c) }));
+  private rings: Decal[] = Array.from({ length: 16 }, () => ({ x: 0, y: 0, z: 0, yaw: 0, life: 0, size: 1, color: new THREE.Color() }));
+  private mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicMaterial({ depthWrite: false }), this.capacity);
+  private skidMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.11, 0.75), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.38, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 }), 256);
+  private ringMesh = new THREE.InstancedMesh(new THREE.RingGeometry(0.85, 1, 24), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }), 16);
+  private transform = new THREE.Object3D(); private tint = new THREE.Color();
+  private driftClocks = new Map<string, number>(); private skidIndex = 0; private ringIndex = 0;
+  constructor(private scene: THREE.Scene) {
+    for (const mesh of [this.mesh, this.skidMesh, this.ringMesh]) { mesh.count = 0; mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(mesh); }
+  }
+  get counts() { return { particles: this.mesh.count, skids: this.skidMesh.count, rings: this.ringMesh.count }; }
+  private add(pos: Vec3, color: number, size: number, life: number, speed: number, gravity = 10, growth = 0) {
+    const p = this.pool.find(item => item.life <= 0); if (!p) return;
+    p.position.set(pos.x, pos.y, pos.z); p.color.setHex(color); p.size = size; p.life = p.total = life; p.gravity = gravity; p.growth = growth;
+    p.velocity.set((Math.random() - 0.5) * speed, Math.random() * speed * 0.6, (Math.random() - 0.5) * speed);
+  }
   emit(event: GameEvent) {
-    if (this.particles.length > 400) return;
+    if (event.kind === 'fire' && (event.weapon === 'shield' || event.weapon === 'boost' || event.weapon === 'mine')) return;
     const explosive = event.kind === 'explosion' || event.kind === 'elimination';
-    const count = explosive ? 20 : event.kind === 'fire' ? 3 : 8;
-    const color = explosive ? 0xffa259 : event.kind === 'pickup' ? 0xffdb7e : event.kind === 'shield' ? 0x67d5ff : event.kind === 'boost' ? 0x72ffc1 : 0xfff3cb;
-    let material = this.materials.get(color);
-    if (!material) { material = new THREE.MeshBasicMaterial({ color }); this.materials.set(color, material); }
-    for (let i = 0; i < count; i++) {
-      const mesh = new THREE.Mesh(this.geometry, material); mesh.position.set(event.x, event.y, event.z);
-      const size = explosive ? 0.25 + Math.random() * 0.3 : 0.07 + Math.random() * 0.12; mesh.scale.setScalar(size); this.scene.add(mesh);
-      const speed = explosive ? 8 : 3, life = explosive ? 0.65 : 0.3;
-      this.particles.push({ mesh, size, velocity: new THREE.Vector3((Math.random() - 0.5) * speed, Math.random() * speed, (Math.random() - 0.5) * speed), life, total: life });
+    const color = explosive ? 0xffad4c : event.kind === 'respawn' || event.kind === 'shield' ? 0x68ddff : event.kind === 'pickup' ? 0xffd963 : event.kind === 'boost' ? 0x64ffcf : 0xfff1b5;
+    const fire = event.kind === 'fire', count = explosive ? 22 : fire ? 4 : event.kind === 'collision' ? 5 : 12;
+    for (let i = 0; i < count; i++) this.add(event, color, explosive ? 0.16 + Math.random() * 0.25 : fire ? 0.1 : 0.065, explosive ? 0.65 : fire ? 0.09 : 0.4, explosive ? 12 : fire ? 2 : 5);
+    if (explosive) for (let i = 0; i < 10; i++) this.add(event, 0x75808b, 0.18, 0.85, 4, -1.2, 1.8);
+    if (explosive || event.kind === 'respawn' || event.kind === 'pickup' || event.kind === 'shield') {
+      const ring = this.rings[this.ringIndex++ % this.rings.length]!;
+      Object.assign(ring, { x: event.x, y: groundHeight(event.x, event.z) + 0.05, z: event.z, life: 0.65, size: explosive ? event.radius ?? 3 : 2.5 }); ring.color.setHex(color);
+    }
+  }
+  trail(p: Projectile, dt: number) {
+    if ((p.kind !== 'rocket' && p.kind !== 'homing' && p.kind !== 'bomb') || Math.random() > Math.min(1, dt * 30)) return;
+    const speed = Math.hypot(p.vx, p.vy, p.vz) || 1;
+    this.add({ x: p.x - p.vx / speed * 0.6, y: p.y - p.vy / speed * 0.6, z: p.z - p.vz / speed * 0.6 }, p.kind === 'homing' ? 0xba92e0 : p.kind === 'bomb' ? 0xffb752 : 0xb4bac0, 0.12, 0.45, 0.7, -0.6, 1.5);
+  }
+  drive(kart: KartState, id: string, dt: number) {
+    const telemetry = drivingTelemetry(kart);
+    if (!telemetry.sliding) { this.driftClocks.delete(id); return; }
+    const elapsed = (this.driftClocks.get(id) ?? 0) + dt;
+    if (elapsed < 0.065) { this.driftClocks.set(id, elapsed); return; }
+    this.driftClocks.set(id, elapsed % 0.065);
+    for (const side of [-1, 1]) {
+      const x = kart.x + Math.cos(kart.yaw) * side * 0.83 - Math.sin(kart.yaw) * 0.77;
+      const z = kart.z - Math.sin(kart.yaw) * side * 0.83 - Math.cos(kart.yaw) * 0.77;
+      const y = groundHeight(x, z) + 0.025;
+      this.add({ x, y: y + 0.12, z }, 0xbec8ce, 0.13, 0.55, 0.7, -0.6, 1.7);
+      const mark = this.skids[this.skidIndex++ % this.skids.length]!;
+      Object.assign(mark, { x, y, z, yaw: kart.yaw, life: 6, size: 1 });
     }
   }
   update(dt: number) {
-    this.particles = this.particles.filter(p => {
-      p.life -= dt; if (p.life <= 0) { this.scene.remove(p.mesh); return false; }
-      p.velocity.y -= 12 * dt; p.mesh.position.addScaledVector(p.velocity, dt); p.mesh.scale.setScalar(p.size * p.life / p.total); return true;
-    });
+    let count = 0; const t = this.transform; t.rotation.set(0, 0, 0);
+    for (const p of this.pool) {
+      if (p.life <= 0) continue; p.life -= dt; if (p.life <= 0) continue;
+      p.velocity.y -= p.gravity * dt; p.position.addScaledVector(p.velocity, dt);
+      t.position.copy(p.position); t.scale.setScalar(p.size * (p.growth ? 1 + (p.total - p.life) * p.growth : p.life / p.total)); t.updateMatrix();
+      this.mesh.setMatrixAt(count, t.matrix); this.tint.copy(p.color).multiplyScalar(0.5 + p.life / p.total * 0.5); this.mesh.setColorAt(count++, this.tint);
+    }
+    this.mesh.count = count; this.mesh.instanceMatrix.needsUpdate = true; if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    this.updateDecals(this.skids, this.skidMesh, dt, false); this.updateDecals(this.rings, this.ringMesh, dt, true);
   }
-  dispose() { for (const p of this.particles) this.scene.remove(p.mesh); this.particles = []; this.geometry.dispose(); for (const m of this.materials.values()) m.dispose(); }
+  private updateDecals(pool: Decal[], mesh: THREE.InstancedMesh, dt: number, ring: boolean) {
+    let count = 0; const t = this.transform;
+    for (const p of pool) {
+      if (p.life <= 0) continue; p.life -= dt; if (p.life <= 0) continue;
+      t.position.set(p.x, p.y, p.z); t.rotation.set(-Math.PI / 2, 0, p.yaw);
+      const scale = ring ? p.size * (1 - p.life / 0.65) : Math.min(1, p.life);
+      t.scale.set(scale, scale, scale); t.updateMatrix(); mesh.setMatrixAt(count, t.matrix); mesh.setColorAt(count++, p.color);
+    }
+    mesh.count = count; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+  reset() { for (const pool of [this.pool, this.skids, this.rings]) for (const item of pool) item.life = 0; this.driftClocks.clear(); for (const mesh of [this.mesh, this.skidMesh, this.ringMesh]) mesh.count = 0; }
+  dispose() { this.reset(); for (const mesh of [this.mesh, this.skidMesh, this.ringMesh]) { mesh.removeFromParent(); mesh.geometry.dispose(); (mesh.material as THREE.Material).dispose(); mesh.dispose(); } }
 }

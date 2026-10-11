@@ -22,7 +22,7 @@ npm run build
 npm start
 ```
 
-Open **http://localhost:3001**. With `SERVE_CLIENT=true` (default), this process serves the built client and WebSocket endpoint together. `npm run build:client` and `npm run build:server` also build independently for Render. For `NODE_ENV=production`, set `ALLOWED_ORIGINS` to the frontend's exact origin. This project has passed local production-readiness checks and has not been deployed to Render.
+Open **http://localhost:3001**. With `SERVE_CLIENT=true` (default), this process serves the built client and WebSocket endpoint together. `npm run build:client` and `npm run build:server` also build independently for Render. For `NODE_ENV=production`, set `ALLOWED_ORIGINS` to the frontend's exact origin. The gameplay upgrade is checked locally. Updating an existing Render deployment requires rebuilding and deploying both services.
 
 ## Deploy to Render
 
@@ -34,7 +34,7 @@ Prepare GitHub:
 
 1. Run `npm ci --include=dev`, install Chromium with `npx playwright install chromium`, and run `npm run check` locally.
 2. Create an empty GitHub repository and push the complete monorepo, including `package-lock.json`, `render.yaml`, `.node-version`, and `.env.example`. Do not push `.env`, `node_modules`, or build output; they are ignored.
-3. If no remote exists, run `git remote add origin https://github.com/YOUR-OWNER/YOUR-REPO.git`, then `git push -u origin HEAD`. Check `git remote -v` first if the repository already has a remote. This workspace currently has no remote configured.
+3. If no remote exists, run `git remote add origin https://github.com/YOUR-OWNER/YOUR-REPO.git`, then `git push -u origin HEAD`. Check `git remote -v` first if the repository already has a remote. If an origin already exists, use it instead of adding a second remote.
 
 Blueprint deployment:
 
@@ -67,7 +67,7 @@ Test real multiplayer after deployment:
 1. Open the **same frontend HTTPS URL** on two desktop/laptop devices, ideally on different networks. Enter distinct nicknames. Create a room on device A and join its code on device B.
 2. Start as host, drive both karts, collect boxes, fire weapons, and confirm that positions, damage, ammo, explosions, scores, and the countdown agree. Confirm elimination/respawn, match completion, and replay.
 3. Briefly disconnect device A's network, keeping device B connected. Device B should retain the room and receive host ownership. Restore A's network: it should automatically rejoin with a new temporary identity and zero score if the room survives. If everyone disconnected or the server restarted, create/join a new room.
-4. Check Render logs for connection/room/match events and errors. Repeat with eight players and inspect CPU, memory, latency, and outbound bandwidth on the selected compute plan. This hosted acceptance test has not yet been executed.
+4. Check Render logs for connection/room/match events and errors. Repeat with eight players and inspect CPU, memory, latency, and outbound bandwidth on the selected compute plan. Repeat these hosted acceptance checks after deploying the upgrade; local automation does not establish hosted performance.
 
 Troubleshooting:
 
@@ -93,7 +93,7 @@ Troubleshooting:
 | Space (hold) | Activate/fire the equipped weapon |
 | Shift (hold) | Drift with reduced lateral grip |
 
-Drive through glowing gold boxes with an empty weapon slot to collect a random weapon. A collected box disappears for seven seconds. Unspent weapons are retained when driving over other boxes. Projectiles fire forward along the kart's heading; homing missiles select a nearby visible enemy ahead. Mines drop behind you. Watch the HUD for ammo, hull health, shield/boost time, respawn protection, match time, and scores. The minimap marks players, walls, and available boxes.
+Drive through glowing gold boxes with an empty weapon slot to collect a random weapon. A collected box disappears for seven seconds. Unspent weapons are retained when driving over other boxes. Projectiles fire forward; the machine gun assists toward a visible enemy within its forward cone and leads its velocity. Its bullets still travel, have limited range, and can miss. Homing missiles select a nearby visible enemy ahead. Mines drop behind you. Watch the HUD for ammo, hull health, shield/boost time, respawn protection, match time, and scores. The minimap marks players, walls, and available boxes.
 
 An elimination earns one point; self-eliminations do not. Tied scores are ordered by fewer deaths; a tie on both is a shared victory. Eliminated karts respawn after 2.5 seconds at a spawn far from living opponents, with two seconds of protection. Splash damage can hurt the firing player. Walls occlude splash damage. Ramps can launch a fast kart into the air.
 
@@ -124,7 +124,7 @@ tests/            unit, real WebSocket integration, two-session browser tests
 
 The authoritative Node server advances at **60 Hz** and broadcasts snapshots at **20 Hz**. Clients send batches of three sequenced control commands, normally 20 packets/second, without position, damage, health, pickup, ammo, or score claims. The server consumes at most one command per player per tick. Input queues are capped, sequence repeats ignored, values validated, payloads limited to 4 KB, and traffic limited to 100 messages/second per socket. Stale inputs neutralize after 250 ms. Heartbeats disconnect unresponsive transports. Host ownership transfers when the host leaves. Empty rooms are immediately removed; non-playing rooms idle for ten minutes are evicted.
 
-The local client predicts the shared movement function at 60 Hz, resets to each authoritative snapshot, discards acknowledged inputs, and replays pending inputs. Render smoothing softens corrections. Remote karts interpolate across a 100 ms history; respawns snap instead of interpolating across the arena. Server-owned projectiles have bounded client visual extrapolation. Event IDs deduplicate effects and sounds.
+The local client predicts the shared movement function at 60 Hz, predicts contacts against bounded remote-body estimates, resets to each authoritative snapshot, discards acknowledged inputs, and replays pending inputs. Input sampling/prediction and packet batching run on a separate timer from rendering; a browser regression pauses animation frames and verifies that driving commands still reach the server. Remote estimates are disposable copies and never change server state. Render smoothing softens corrections. Remote karts interpolate across a 100 ms history; respawns snap instead of interpolating across the arena. Server-owned projectiles have bounded client visual extrapolation. Event IDs deduplicate effects and sounds.
 
 Wire numbers are rounded to 0.001 units; server simulation retains full precision. Effects are transmitted once per client after the last successfully sent snapshot, with retained events available to a client whose snapshot was skipped due to backpressure. The client retains recent effects locally for HUD feedback. Snapshot encoding is cached for clients at the same event position.
 
@@ -132,13 +132,32 @@ Three.js is integrated directly with React instead of rendering every simulation
 
 **Physics choice:** a shared arcade circle-body solver and a vertical heightfield replace Rapier for this arena. This keeps server and client movement identical, avoids WASM initialization and full vehicle physics, and supports wall contacts, kart momentum exchange, slopes, gravity, braking, reverse, and controlled slides. Projectile collision sweeps complete segments against expanded wall boxes, kart spheres, and sampled terrain, preventing fast bullets from tunneling. This is intentionally an arcade approximation; it is not a general rigid-body engine.
 
+## Stable driving, targeting and rendering
+
+The flying-kart defect came from converting a ramp height discontinuity into upward velocity. Entering a ramp from its vertical side could generate **156 units/second** upward speed; normal slope motion also broke the old grounded check. The shared solver now treats ramp sides as horizontal contacts and keeps supported motion at the terrain height with zero ballistic velocity. Genuine crest departures preserve jumps, limited to 6.5 units/second, followed by gravity and non-bouncing landings. Sampling the previous two approach grades prevents a step straddling the triangular crest from weakening its launch; a regression covers 64 starting alignments. Horizontal collision impulses use low restitution, steering is capped, long steps subdivide, and invalid/out-of-arena states recover identically on server and client. The solver remains upright; there is no rigid-body mass/inertia or wheel suspension to tune.
+
+Physics settings in `shared/src/config.ts` include `maxYawRate` (2.3 rad/s), `maxJumpVelocity` (6.5), `terminalVelocity` (22), `groundTolerance` (0.055), `groundSnapDistance` (0.2), `maxStepHeight` (0.18), `rampJumpSpeed` (10), `kartRestitution` (0.1), `wallRestitution` (0.08), and `recoveryHeight` (12). These are arcade world units.
+
+Machine-gun assistance is configured by `WEAPONS.machineGun.aimAssist`: 28-unit range, 0.52-radian half-cone, 0.38-radian maximum correction, 0.4-second maximum lead, and 0.014-radian per-shot spread. The server selects targets after movement/collisions, checks walls and ramp terrain along current and predicted sightlines, and publishes the selected ID for the subtle HUD/turret cue. Bullet sweeps and damage remain server-owned; bullet travel and hit validation enforce the range even without a target. Protected/dead/out-of-cone/occluded targets are rejected and a changed opponent velocity can defeat the lead.
+
+Kart body and static arena parts are merged by material. Models, asphalt grain, road paint, cargo props, trees, sky, pickups and sounds are original procedural assets. Effects use 512 particle instances, 256 tyre marks and 16 shock rings, costing at most three effect draw calls. Shadows use one 1024 map refreshed at up to 20 Hz during games. Menu/lobby/results use a static arena view that redraws on scene/phase/resize changes, rather than continuously consuming GPU time. Raster pixel ratio is capped at 1.25 and drops to 1 for slow foreground matches; after three consistently slow samples it drops to 0.85 with lightweight contact shadows. This changes rendering quality only. Renderer statistics are exposed as attributes on `.game-canvas` for browser tests, without a gameplay debug panel.
+
+Engine/harmonic oscillators and a looping tyre-noise source start once after audio unlock. Smooth gain/pitch changes follow speed/load and actual grounded sideways slip. Parked, straight-driving and airborne karts do not produce drift sound or marks. Combat sounds have a 12-voice budget, contact sounds are rate-limited, and shield/boost activation avoids duplicate firing audio. HUD health, speed/slip, ammo, target feedback, final-seconds countdown, live standings, kill feed and results share a responsive arcade style with reduced-motion support.
+
+## Updating the existing Render deployment
+
+1. Run `npm run check` and `npm run benchmark`, then commit the verified release. Push it to the configured GitHub origin when ready.
+2. Keep the backend **Free**, with one instance, and the frontend as the free Static Site. The existing Blueprint needs no plan or environment changes for this upgrade.
+3. With automatic deploys disabled, manually deploy the backend's release using `npm run build:server` / `npm run start:server`, then rebuild/deploy the Static Site using `npm run build:client` and `client/dist`. Keep the existing exact HTTPS `ALLOWED_ORIGINS` and `VITE_SERVER_URL`. Deploy between matches because rooms live in process memory.
+4. Verify `/health`, then run the two-device acceptance checks above. Drive into ramp sides, jump over a ramp crest, drift at speed, and check machine-gun tracking against a moving enemy and behind a wall. Confirm both devices agree on health, ammo and scores.
+
 ## Configuration and balancing
 
 Global simulation tuning is in `shared/src/config.ts`; map walls, ramps, spawns, and pickups are in `shared/src/arena.ts`; weapon values are in `shared/src/weapons.ts`. Every initial weapon has an activation handler and server trajectory/collision behavior.
 
 | Weapon | Uses/ammo | Cooldown | Damage | Behavior |
 |---|---:|---:|---:|---|
-| Machine gun | 30 | 0.105 s | 12 | 76 units/s bullets, repeated while held |
+| Machine gun | 30 | 0.105 s | 12 | 76 units/s bullets; 28-unit range, cone assistance, velocity lead and slight spread |
 | Rocket | 3 | 0.65 s | 72 max | 32 units/s, 5.5-unit blast |
 | Homing missile | 2 | 0.85 s | 65 max | Visible target within 36 units, configured turn response, 4.5-unit blast |
 | Mine | 3 | 0.6 s | 85 max | 0.7 s arming delay, enemy proximity, 5-unit blast, expires at 22 s |
@@ -182,12 +201,12 @@ Coverage includes room creation/joining, invalid rooms, forced duplicate codes, 
 
 See [AUDIT.md](AUDIT.md) for the current audit findings and test evidence, and [PROGRESS.md](PROGRESS.md) for milestones.
 
-The final check passed **99 unit/integration tests** and **all seven Chromium browser scenarios**, plus the compiled eight-client production smoke. The audit verifies all eight weapons, two-player elimination/respawn/replay, 120 ms simulated round-trip delay, browser transport recovery, HTTPS/WSS across separate origins, and eight simultaneous browser/input clients. The eight-browser software-WebGL run recorded about 2 animation frames/second per client at 640×720, so it verifies functionality rather than smooth physical-device performance. `npm run test:production` also checks configured port/binding, CORS, health, snapshots, pickups/weapons, match completion, replay, disconnect/rejoin, and graceful shutdown. On Windows it invokes the SIGTERM handler through a local IPC harness; actual Linux signal delivery is not claimed. Details are recorded in `AUDIT.md`.
+The final check passed **129 unit/integration tests** and **all ten Chromium browser scenarios**, plus the compiled eight-client production smoke. The audit verifies all eight weapons, two-player elimination/respawn/replay, ramp-side grounding/crest jumps, machine-gun assistance and wall blocking, paused-animation input delivery, idle/resize rendering, 120 ms simulated round-trip delay, browser transport recovery, HTTPS/WSS across separate origins, and eight simultaneous browser/input clients. The final eight-browser software-WebGL run recorded approximately 1 animation frame/second per client at 640×720 and 31–112 measured draw calls per view. This deliberately heavy single-machine software-rendering run verifies multiplayer functionality and rendering bounds; it does not establish smooth performance on physical devices. `npm run test:production` also checks configured port/binding, CORS, health, snapshots, pickups/weapons, match completion, replay, disconnect/rejoin, and graceful shutdown. On Windows it invokes the SIGTERM handler through a local IPC harness; actual Linux signal delivery is not claimed. Details are recorded in `AUDIT.md`.
 
-The benchmark simulates a three-minute match with eight karts continuously firing and instantly receiving replacement weapons, intentionally heavier combat than normal pickup-limited play. The audited local run completed in 639 ms, with a 0.146 ms p95 tick plus snapshot cost, 63 peak projectiles, and 10,199-byte average snapshots. Estimated outbound payload is 1,594 KiB/s per eight-player room under that workload, excluding transport overhead. These measurements do not establish Render capacity or browser frame rate.
+The benchmark simulates a three-minute match with eight karts continuously firing and instantly receiving replacement weapons, intentionally heavier combat than normal pickup-limited play. The audited local run completed in 510 ms, with a 0.123 ms p95 tick plus snapshot cost, 36 peak projectiles, and 6,538-byte average snapshots. Estimated outbound payload is 1,022 KiB/s per eight-player room under that workload, excluding transport overhead. These measurements do not establish Render capacity or browser frame rate.
 
 ## Reference and limits
 
 Smash Karts is a gameplay inspiration only. Direct interactive inspection of the reference game was not performed. Pickup pacing, acceleration/turning, weapon balance, hit volumes, blast occlusion, respawn protection, and arena layout are original design assumptions, not claims of exact reproduction. No proprietary code, models, branding, sounds, or downloaded game assets are used. Three.js and Vite integration was checked against their [renderer documentation](https://threejs.org/docs/pages/WebGLRenderer.html) and [server/proxy documentation](https://vite.dev/config/server-options).
 
-This is a single-process, in-memory multiplayer server. Restarting it discards rooms. A reconnect creates a new temporary player identity and rejoins the room if other players kept it alive; scores are not restored. Desktop keyboard input and WebGL are required. Touch/gamepad controls and horizontal scaling are outside this build. Render configuration and local HTTPS/WSS tests are ready; actual Render deployment, real WAN behavior, and testing across physical devices/GPUs remain unverified. Prediction corrects against server authority without historical projectile rewind. Full snapshots favor clarity at this eight-player scale; larger deployments need bandwidth profiling and room routing.
+This is a single-process, in-memory multiplayer server. Restarting it discards rooms. A reconnect creates a new temporary player identity and rejoins the room if other players kept it alive; scores are not restored. Desktop keyboard input and WebGL are required. Touch/gamepad controls and horizontal scaling are outside this build. Render configuration and local HTTPS/WSS tests are ready; deployment of this upgrade, real WAN behavior, and testing across physical devices/GPUs remain unverified. Prediction corrects against server authority without historical projectile rewind. Full snapshots favor clarity at this eight-player scale; larger deployments need bandwidth profiling and room routing.

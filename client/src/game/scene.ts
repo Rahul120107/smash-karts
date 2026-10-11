@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { CONFIG, DT } from '../../../shared/src/config.js';
 import { angleDelta } from '../../../shared/src/math.js';
+import { drivingTelemetry } from '../../../shared/src/movement.js';
+import { groundHeight } from '../../../shared/src/arena.js';
 import { clipCameraRay } from './camera.js';
 import type { Input, PlayerState, Snapshot } from '../../../shared/src/types.js';
 import { connection } from '../networking/connection.js';
@@ -34,14 +36,25 @@ export class ArenaGame {
   private pickupTemplate = createPickup(); private particles: Particles; readonly audio = new GameAudio();
   private unsubscribe: () => void; private resize: ResizeObserver; private previous = performance.now();
   private accumulator = 0; private outgoing: Input[] = []; private lastEvent = 0; private lastPhase = ''; private lastCode = '';
+  private inputTimer: ReturnType<typeof setInterval>; private previousInput = performance.now();
   private renderYaw = 0; private cameraReady = false; private lastFrame = 0;
+  private lastShadow = 0; private frames = 0; private statsAt = 0; private frameAverage = 16; private slowSamples = 0;
+  private visualTarget = new THREE.Vector3();
+  private idleDirty = true; private renderMode = ''; private idleRenders = 0;
   private aim = new THREE.Vector3(); private cameraTarget = new THREE.Vector3();
   constructor(private container: HTMLDivElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25)); this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFShadowMap; this.renderer.shadowMap.autoUpdate = false; this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.1;
     this.renderer.domElement.setAttribute('aria-label', '3D kart combat arena'); this.container.append(this.renderer.domElement);
-    this.scene.background = new THREE.Color(0xbdd8e4); this.scene.fog = new THREE.Fog(0xbdd8e4, 80, 155);
+    this.scene.background = new THREE.Color(0xaad6ed); this.scene.fog = new THREE.Fog(0xaad6ed, 72, 135);
+    const skyCanvas = document.createElement('canvas'); skyCanvas.width = 4; skyCanvas.height = 128;
+    const skyContext = skyCanvas.getContext('2d')!, gradient = skyContext.createLinearGradient(0, 0, 0, 128);
+    gradient.addColorStop(0, '#528fc6'); gradient.addColorStop(0.5, '#badfed'); gradient.addColorStop(1, '#f5e1bb');
+    skyContext.fillStyle = gradient; skyContext.fillRect(0, 0, 4, 128);
+    const skyMap = new THREE.CanvasTexture(skyCanvas); skyMap.colorSpace = THREE.SRGBColorSpace;
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(140, 24, 12), new THREE.MeshBasicMaterial({ map: skyMap, side: THREE.BackSide, fog: false, depthWrite: false })); sky.renderOrder = -2; this.scene.add(sky);
+    const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffedbe, fog: false })); sunDisc.position.set(-70, 82, 58); this.scene.add(sunDisc);
     this.scene.add(new THREE.HemisphereLight(0xedf7ff, 0x777153, 2.1));
     const sun = new THREE.DirectionalLight(0xfff0d3, 2.3); sun.position.set(-25, 50, 20); sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024); sun.shadow.camera.left = -45; sun.shadow.camera.right = 45; sun.shadow.camera.top = 45; sun.shadow.camera.bottom = -45; sun.shadow.camera.far = 110; sun.shadow.bias = -0.001; this.scene.add(sun);
@@ -51,21 +64,22 @@ export class ArenaGame {
     this.unsubscribe = connection.onSnapshot(s => this.receive(s));
     if (connection.state.snapshot) this.receive(connection.state.snapshot);
     this.renderer.setAnimationLoop(() => this.frame());
+    this.inputTimer = setInterval(() => this.stepInputs(), DT * 1000);
     this.renderer.domElement.addEventListener('webglcontextlost', this.contextLost);
   }
   private contextLost = (event: Event) => { event.preventDefault(); console.error('WebGL context lost. Reload to restore the renderer.'); this.container.dataset.error = 'Graphics connection lost. Reload this page to restore the arena.'; };
-  private updateSize() { const width = this.container.clientWidth, height = this.container.clientHeight; if (!width || !height) return; this.camera.aspect = width / height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width, height); }
+  private updateSize() { const width = this.container.clientWidth, height = this.container.clientHeight; if (!width || !height) return; this.camera.aspect = width / height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width, height); this.idleDirty = true; }
   private receive(state: Snapshot) {
     const id = connection.state.id;
     if (state.code !== this.lastCode) this.lastEvent = 0;
-    if (state.phase !== this.lastPhase || state.code !== this.lastCode) { this.outgoing = []; this.accumulator = 0; this.cameraReady = false; }
+    if (state.phase !== this.lastPhase || state.code !== this.lastCode) { this.outgoing = []; this.accumulator = 0; this.previousInput = performance.now(); this.cameraReady = false; this.particles.reset(); this.idleDirty = true; }
     this.lastPhase = state.phase; this.lastCode = state.code;
     if (id) this.prediction.reconcile(state, id);
     this.interpolation.push(state);
     const present = new Set(state.players.map(p => p.id));
-    for (const [key, kart] of this.karts) if (!present.has(key)) { this.scene.remove(kart.group); disposeObject(kart.group); this.karts.delete(key); }
+    for (const [key, kart] of this.karts) if (!present.has(key)) { this.scene.remove(kart.group); disposeObject(kart.group); this.karts.delete(key); this.renderer.shadowMap.needsUpdate = true; this.idleDirty = true; }
     for (const player of state.players) if (!this.karts.has(player.id)) {
-      const visual = createKart(player.color, player.name); visual.group.position.set(player.x, player.y, player.z); visual.group.rotation.y = player.yaw; this.scene.add(visual.group); this.karts.set(player.id, visual);
+      const visual = createKart(player.color, player.name); visual.group.position.set(player.x, player.y, player.z); visual.group.rotation.y = player.yaw; this.scene.add(visual.group); this.karts.set(player.id, visual); this.renderer.shadowMap.needsUpdate = true; this.idleDirty = true;
     }
     for (const box of state.pickups) if (!this.pickups.has(box.id)) { const visual = this.pickupTemplate.clone(); this.scene.add(visual); this.pickups.set(box.id, visual); }
     const activeProjectiles = new Set(state.projectiles.map(p => p.id));
@@ -77,30 +91,40 @@ export class ArenaGame {
     const self = state.players.find(p => p.id === id);
     for (const event of state.events) if (event.id > this.lastEvent) {
       this.lastEvent = event.id;
+      if (state.phase !== 'playing') continue;
       if (state.time - event.at > 0.3) continue;
       this.particles.emit(event);
       this.audio.event(event, self ? Math.hypot(self.x - event.x, self.z - event.z) : 30);
     }
     this.lastFrame = performance.now();
   }
+  private stepInputs() {
+    const now = performance.now(), delta = Math.min(0.1, (now - this.previousInput) / 1000); this.previousInput = now;
+    const state = connection.state.snapshot, self = state?.players.find(p => p.id === connection.state.id);
+    if (!state || !self || state.phase !== 'playing' || connection.state.status !== 'connected' || document.hidden) { this.accumulator = 0; this.outgoing = []; return; }
+    this.accumulator += delta;
+    while (this.accumulator >= DT) {
+      const input = this.controls.read(this.prediction.sequence + 1);
+      this.prediction.step(input, self, state.time + (now - this.lastFrame) / 1000);
+      this.outgoing.push(input); this.accumulator -= DT;
+      if (this.outgoing.length >= 3) connection.send({ type: 'input', commands: this.outgoing.splice(0, 3) });
+    }
+  }
   private frame() {
     const now = performance.now();
+    const mode = connection.state.snapshot?.phase ?? 'menu';
+    if (mode !== this.renderMode) { this.renderMode = mode; this.idleDirty = true; }
+    // Menus use a static arena view and redraw only when membership/phase changes.
+    // Idle backgrounds must not compete with active game windows for GPU time.
+    if (mode !== 'playing' && !this.idleDirty) { this.previous = now; return; }
     // Menus and background tabs do not need a full-speed arena render loop.
-    const interval = document.hidden ? 250 : connection.state.snapshot?.phase === 'playing' ? 0 : 50;
+    const interval = document.hidden ? 250 : connection.state.snapshot?.phase === 'playing' ? 0 : 250;
     if (now - this.previous < interval) return;
-    const delta = Math.min(0.1, (now - this.previous) / 1000); this.previous = now;
+    const elapsed = (now - this.previous) / 1000;
+    const delta = Math.min(0.1, elapsed); this.previous = now;
     const state = connection.state.snapshot, id = connection.state.id;
     const self = state?.players.find(p => p.id === id) ?? null;
     const playing = state?.phase === 'playing' && connection.state.status === 'connected';
-    if (state && self && playing && !document.hidden) {
-      this.accumulator += delta;
-      while (this.accumulator >= DT) {
-        const input = this.controls.read(this.prediction.sequence + 1);
-        this.prediction.step(input, self, state.time + (now - this.lastFrame) / 1000);
-        this.outgoing.push(input); this.accumulator -= DT;
-        if (this.outgoing.length >= 3) { connection.send({ type: 'input', commands: this.outgoing.splice(0, 3) }); }
-      }
-    } else { this.accumulator = 0; this.outgoing = []; }
     if (state) {
       for (const p of state.players) this.renderKart(p, id, now, delta, state);
       for (const box of state.pickups) {
@@ -113,27 +137,58 @@ export class ArenaGame {
         visual.position.set(p.x + p.vx * extrapolation, p.y + p.vy * extrapolation, p.z + p.vz * extrapolation);
         if (p.kind !== 'mine' && p.kind !== 'bomb') visual.lookAt(visual.position.x + p.vx, visual.position.y + p.vy, visual.position.z + p.vz);
         if (p.kind === 'mine') visual.scale.setScalar(state.time >= p.armedAt ? 1 + Math.sin(now / 100) * 0.06 : 0.85);
+        this.particles.trail({ ...p, x: visual.position.x, y: visual.position.y, z: visual.position.z }, delta);
       }
     }
     if (playing && self) this.followCamera(self, delta);
-    else { const t = now / 50000; this.camera.position.set(Math.sin(t) * 55, 48, Math.cos(t) * 55); this.camera.lookAt(0, 0, 0); this.cameraReady = false; }
-    this.audio.update(self, this.prediction.kart ? Math.hypot(this.prediction.kart.vx, this.prediction.kart.vz) : 0, !!playing);
-    this.particles.update(delta); this.renderer.render(this.scene, this.camera);
+    else { this.camera.position.set(48, 48, 50); this.camera.lookAt(0, 0, 0); this.cameraReady = false; }
+    this.audio.update(self, this.prediction.kart, !!playing, delta);
+    this.particles.update(delta);
+    if (playing && !document.hidden && now - this.lastShadow >= 1000 / 20) { this.renderer.shadowMap.needsUpdate = true; this.lastShadow = now; }
+    this.renderer.render(this.scene, this.camera);
+    if (!playing) this.container.dataset.idleRenders = String(++this.idleRenders);
+    this.idleDirty = false;
+    this.frames++; this.frameAverage += (elapsed * 1000 - this.frameAverage) * 0.05;
+    if (now - this.statsAt > 1000) {
+      this.container.dataset.drawCalls = String(this.renderer.info.render.calls);
+      this.container.dataset.triangles = String(this.renderer.info.render.triangles);
+      this.container.dataset.fps = String(Math.round(this.frames * 1000 / (now - this.statsAt)));
+      this.container.dataset.audioVoices = String(this.audio.activeVoices);
+      this.frames = 0; this.statsAt = now;
+      // Foreground measurements only; menu/background throttling never selects low quality.
+      this.slowSamples = playing && !document.hidden && this.frameAverage > 50 ? this.slowSamples + 1 : 0;
+      if (this.slowSamples >= 3) {
+        if (this.renderer.getPixelRatio() > 0.85) { this.renderer.setPixelRatio(0.85); this.updateSize(); }
+        this.renderer.shadowMap.enabled = false; this.container.dataset.reducedGraphics = 'true';
+      } else if (playing && !document.hidden && this.frameAverage > 36 && this.renderer.getPixelRatio() > 1) { this.renderer.setPixelRatio(1); this.updateSize(); }
+    }
   }
   private renderKart(p: PlayerState, id: string | null, now: number, dt: number, state: Snapshot) {
     const visual = this.karts.get(p.id)!;
     const position = p.id === id ? this.prediction.kart ?? p : this.interpolation.sample(p.id, now) ?? p;
     const smoothing = p.id === id ? 1 - Math.exp(-22 * dt) : 1;
-    const target = new THREE.Vector3(position.x, position.y, position.z);
+    const target = this.visualTarget.set(position.x, position.y, position.z);
     if (visual.group.position.distanceTo(target) > 5) visual.group.position.copy(target); else visual.group.position.lerp(target, smoothing);
     visual.group.rotation.y += angleDelta(visual.group.rotation.y, position.yaw) * smoothing;
     visual.group.visible = p.health > 0;
-    visual.shield.visible = state.time < p.shieldUntil || state.time < p.invulnerableUntil;
+    visual.shield.visible = state.phase === 'playing' && (state.time < p.shieldUntil || state.time < p.invulnerableUntil);
     visual.shield.rotation.y += dt * 0.7;
+    (visual.shield.material as THREE.MeshBasicMaterial).opacity = 0.12 + Math.sin(now / 240) * 0.035;
     visual.boost.visible = state.time < p.boostUntil; visual.boost.scale.y = 0.8 + Math.sin(now / 45) * 0.2;
     visual.label.visible = p.id !== id;
-    const speed = Math.hypot(position.vx, position.vz);
-    for (const wheel of visual.wheels) wheel.rotation.x += speed * dt * 2;
+    const telemetry = drivingTelemetry(position);
+    if (p.id === id) { this.container.dataset.kartY = String(visual.group.position.y); this.container.dataset.predictionY = String(position.y); }
+    if (telemetry.grounded) visual.group.position.y = Math.max(groundHeight(visual.group.position.x, visual.group.position.z), visual.group.position.y);
+    visual.contact.visible = !this.renderer.shadowMap.enabled;
+    visual.contact.position.y = groundHeight(visual.group.position.x, visual.group.position.z) - visual.group.position.y + 0.025;
+    (visual.contact.material as THREE.MeshBasicMaterial).opacity = 0.22 / (1 + Math.max(0, -visual.contact.position.y) * 2);
+    for (const wheel of visual.wheels) wheel.rotation.x += telemetry.forward * dt * 3;
+    for (const pivot of visual.steering) pivot.rotation.y = Math.max(-0.32, Math.min(0.32, angleDelta(visual.group.rotation.y, Math.atan2(position.vx, position.vz)))) * Math.min(1, telemetry.speed / 5);
+    visual.chassis.rotation.z += (Math.max(-0.06, Math.min(0.06, -telemetry.lateral * 0.008)) - visual.chassis.rotation.z) * (1 - Math.exp(-10 * dt));
+    const aimTarget = state.players.find(other => other.id === p.aimTarget);
+    const turretYaw = aimTarget ? angleDelta(position.yaw, Math.atan2(aimTarget.x - position.x, aimTarget.z - position.z)) : 0;
+    visual.turret.rotation.y += (Math.max(-0.38, Math.min(0.38, turretYaw)) - visual.turret.rotation.y) * (1 - Math.exp(-18 * dt));
+    if (p.health > 0 && state.phase === 'playing') this.particles.drive(position, p.id, dt);
   }
   private followCamera(self: PlayerState, dt: number) {
     const visual = this.karts.get(self.id)!;
@@ -152,7 +207,7 @@ export class ArenaGame {
     this.camera.lookAt(this.aim); this.cameraReady = true;
   }
   dispose() {
-    this.renderer.setAnimationLoop(null); this.unsubscribe(); this.controls.dispose(); this.audio.dispose(); this.resize.disconnect(); this.particles.dispose();
+    this.renderer.setAnimationLoop(null); clearInterval(this.inputTimer); this.unsubscribe(); this.controls.dispose(); this.audio.dispose(); this.resize.disconnect(); this.particles.dispose();
     disposeObject(this.scene); disposeObject(this.pickupTemplate); for (const template of this.projectileTemplates.values()) disposeObject(template);
     this.renderer.domElement.removeEventListener('webglcontextlost', this.contextLost); this.renderer.dispose(); this.renderer.domElement.remove();
   }

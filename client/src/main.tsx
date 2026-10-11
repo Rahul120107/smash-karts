@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './ui/App.js';
 import './ui/styles.css';
+import './ui/upgrade.css';
 createRoot(document.getElementById('root')!).render(<App/>);

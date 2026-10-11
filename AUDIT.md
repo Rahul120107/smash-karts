@@ -1,6 +1,22 @@
-# Gameplay and Render readiness audit
+# Gameplay, physics and Render readiness audit
 
 Audit date: 2026-10-11. Existing React/Vite/Three.js/Node/ws TypeScript monorepo preserved. No database, accounts, progression, cosmetics, or unrelated gameplay features added.
+
+## Gameplay upgrade findings
+
+| Finding | Fix and executed evidence |
+|---|---|
+| Entering a ramp through its vertical side converted a 2.6-unit floor discontinuity into 156 units/second upward velocity; the old kart exceeded 266 units after two seconds. Grounded motion also stored slope correction in ballistic velocity, then failed its own ground-contact check. | Shared movement now resolves ramp sides horizontally, separates supported terrain height from ballistic velocity, bounds crest launches/falls, and lands without rebound. Flat driving, ramp-side contact, slow ascent/descent, edge falls, repeated impacts, eight-kart pileups, 10,000 steering steps, recovery and client/server agreement pass automated regressions. No rigid-body mass/inertia exists in this upright arcade solver. |
+| A timestep straddling the triangular crest could average out the approach slope and produce a weak/missing jump. | Use the greatest of the two previous approach grades. All 64 tested starting alignments produce the expected launch impulse and land; real-browser jump checks exercise authoritative snapshots and local prediction. |
+| Input generation was inside the render loop, so delayed animation frames could stop packets and trigger the server timeout. | Sampling/prediction/send batching now uses a separate timer. A real browser regression pauses animation frames and verifies continued authoritative movement and acknowledged key release. Browser weapon fixtures also wait for actual input acknowledgements and compare event IDs, rather than assuming a 150 ms wait or comparing rounded wire timestamps to full-precision server time. |
+| Local prediction only considered walls/terrain and could drive through another kart before the next correction. | Predict horizontal contacts against disposable remote-body copies with at most 100 ms extrapolation. Reconciliation retains server ownership and snapshots are never mutated; contact/prediction regressions pass. |
+| Machine-gun fire had no targeting assistance. | Server selects visible living, unprotected enemies within a 28-unit range and 0.52-radian forward half-cone, favors direction, computes velocity lead, limits correction, and adds small spread. Bullet sweeps/range/damage remain authoritative. Tests cover target switching, wall/ramp occlusion, lead, misses after a direction change, ammo/cooldowns, range boundaries and forged client claims. Two real WebSocket clients receive the same target and health result. |
+| Individual particle meshes and continuously rendered menu backgrounds competed for GPU time during multi-window tests. | Static geometry is merged by material. Effects have fixed pools of 512 particles, 256 tyre marks and 16 rings with at most three effect draw calls. Static menu/lobby/results views redraw on scene, phase or resize changes. Slow foreground matches reduce raster resolution and use contact shadows. Pool/cleanup/batching regressions and real-browser idle/resize checks cover these controls. |
+| Audio did not distinguish actual tyre slip or bound overlapping combat sounds. | Persistent engine/harmonic/tyre sources start once. Smoothed speed/load/slip parameters gate tyres to grounded sliding; combat has a 12-voice budget and contact rate limit. Profile/lifecycle tests cover silent parked/straight/airborne tyres, source reuse, cleanup and activation deduplication. Audible quality requires human listening. |
+
+New procedural kart silhouettes, steering wheels/turrets, asphalt grain, paint, cargo props, trees/sky, glowing pickups, tracers/smoke, sparks/explosions, shield pulses, tyre smoke/marks and respawn rings are original. The responsive UI refresh includes health, speed/slip, weapon/ammo, targeting feedback, live standings, kill feed, urgent countdown, menus/lobby/results and connection indicators. Browser screenshots were inspected at desktop, 640-pixel and 390-pixel widths; a compact health-label wrapping issue was fixed.
+
+Render configuration is unchanged: backend `plan: free`, one Node process, frontend free Static Site. The unchanged Blueprint passed the current official JSON schema. No dependency or stack replacement was needed. The user reports the initial game is deployed; this upgrade is being verified locally and has not been pushed/deployed by this work.
 
 ## Findings and fixes
 
@@ -14,7 +30,7 @@ Audit date: 2026-10-11. Existing React/Vite/Three.js/Node/ws TypeScript monorepo
 | Shutdown immediately terminated connections without notifying players. Binding failure could leave simulation timers running. | Idempotent bounded shutdown sends code 1012, stops loops, drains/terminates sockets, and closes HTTP. Timers start only after successful binding. Real WS shutdown/port-reuse tests pass. |
 | A separately hosted frontend lacked a backend-root URL configuration; root `.env` was not shared with Vite. | `VITE_SERVER_URL`, root env loading, protocol conversion/validation, and Render build checks added. Real HTTPS static-site/WSS tests use separate origins and a local TLS termination proxy. |
 | Production origins were optional and useful lifecycle logs were sparse. | Production configuration requires exact origins; HTTP CORS and WS upgrade checks share the allowlist. Health remains accessible without Origin. Structured lifecycle/error logs and backend-only serving mode added. |
-| Menu/background rendering continued at full animation speed. | Idle menu rendering is capped at 20 Hz and hidden-tab rendering at 4 Hz. Active gameplay retains its normal render loop. |
+| Menu/background rendering continued at full animation speed. | An initial 20 Hz cap was superseded by static menu/lobby/results views with redraws on scene/phase/resize changes. Hidden gameplay rendering is capped at 4 Hz; active gameplay keeps its animation loop and independent input timer. |
 
 ## Gameplay coverage
 
@@ -39,16 +55,16 @@ The compiled production smoke test launches the actual Node entry with productio
 
 ## Local performance
 
-Synthetic three-minute, eight-player continuous-rearming combat workload: 639 ms total simulation time, 0.146 ms p95 tick/snapshot cost, 63 peak projectiles, 10,199-byte average snapshots, 22 eliminations. Estimated outbound payload is 1,594 KiB/s per eight-player room, excluding WebSocket/TLS overhead. Measurements are from this development machine and do not establish Render CPU/memory capacity or a browser frame-rate guarantee.
+Synthetic three-minute, eight-player continuous-rearming combat workload: **510 ms** total, **0.123 ms** p95 tick/snapshot cost, **36** peak projectiles, **6,538-byte** average snapshots, **55** eliminations. Estimated outbound payload is **1,022 KiB/s** per eight-player room, excluding transport overhead. These development-machine measurements do not establish Render capacity.
 
-An initial eight-browser attempt at 1280×800 with software WebGL timed out during the sixth client's startup (five clients had joined). A follow-up at 640×720 with idle menu throttling reached all eight clients and recorded 2–3 animation frames/second per client, but exceeded the 120-second test budget during reporting. The final load scenario allows 240 seconds and closes contexts concurrently. This local software-rendering workload does not establish smooth GPU performance; full-resolution play across eight physical devices still requires hosted acceptance testing. The final executed load result is recorded in `PROGRESS.md`.
+Two early upgrade load runs exceeded the 240-second budget: the first during startup, the second after reaching eight players and completing assertions/report generation. Static idle views and foreground quality controls brought the eight-browser scenario within budget; the final full-suite load case passed in about **72 seconds** at 640×720. It recorded **31–112 draw calls**, **7,100–10,352 triangles** per measured view and approximately **1 animation frame/second** per client under eight concurrent software-WebGL windows. This is a constrained software-rendering functional stress test, not a smooth-performance claim. Physical-device/GPU and hosted eight-player acceptance remain required.
 
 ## Executed checks
 
 - Baseline: production build, 58 unit/integration tests, four browser scenarios passed before edits.
 - Updated builds: `npm run build` passes client/backend compilation and TypeScript checking.
-- `npm run check`: passed both production builds, TypeScript, **99 unit/integration tests across nine files**, **all seven Chromium browser scenarios**, and compiled eight-client production smoke. Final backend path-validation change was rebuilt and its unit/integration regression suite passed again.
-- Final eight-browser functional scenario passed at 640×720. Software-WebGL animation cadence was approximately **2 frames/second per client**; this does not verify smooth performance on physical GPUs/devices.
+- `npm run check`: passed both production builds, TypeScript, **129 unit/integration tests across thirteen files**, **all ten Chromium browser scenarios**, and compiled eight-client production smoke. The final run completed successfully in sequence after the physics, input-clock, rendering and fixture synchronization fixes.
+- Final eight-browser functional scenario passed at 640×720. Software-WebGL animation cadence was approximately **1 frame/second per client**; this does not verify smooth performance on physical GPUs/devices.
 - Separate HTTPS/WSS browser test and automatic browser rejoin passed.
 - Compiled eight-client production smoke passed.
 - `npm audit`: zero vulnerabilities.
@@ -58,14 +74,19 @@ An initial eight-browser attempt at 1280×800 with software WebGL timed out duri
 
 ## Remaining limits
 
-No actual Render deployment, Render-account validation, GitHub push, real WAN latency/loss measurement, or cross-device GPU acceptance test was performed. There is no configured Git remote. The single authoritative process stores rooms in memory: last-player departure deletes the room; backend restart/deploy discards all rooms and scores. Reconnection grants a new temporary identity and zero score. Rolling deployment can briefly overlap processes and does not migrate rooms. Keep one steady-state instance and deploy between matches.
+The user reports the initial game is already deployed. This upgrade has not been deployed by this work; Render-account validation, GitHub push, real WAN latency/loss measurement and cross-device GPU acceptance testing remain pending. A GitHub origin is configured; this upgrade has not been pushed by this work. The single authoritative process stores rooms in memory: last-player departure deletes the room; backend restart/deploy discards all rooms and scores. Reconnection grants a new temporary identity and zero score. Rolling deployment can briefly overlap processes and does not migrate rooms. Keep one steady-state instance and deploy between matches.
 
 Room capacity remains configurable to 16 for compatibility, but the audited target is eight; the arena has eight initial spawn positions. Prediction has no historical projectile rewind. Desktop keyboard input and WebGL are required. Direct interactive reference-game inspection and exact reproduction of Smash Karts mechanics are not claimed.
 
-## Changed files
+## Files changed in this upgrade
 
-- Deployment/tooling: `.env.example`, `.gitignore`, `.node-version`, `render.yaml`, `package.json`, `package-lock.json`, `client/vite.config.ts`, `scripts/production-smoke.mjs`.
-- Client: `client/src/networking/connection.ts`, `client/src/networking/url.ts`, `client/src/game/camera.ts`, `client/src/game/scene.ts`.
-- Backend: `server/src/config.ts`, `server/src/index.ts`, `server/src/networking/server.ts`, `server/src/collisions/projectile.ts`, `server/src/weapons/projectiles.ts`, `server/src/simulation/simulation.ts`.
-- Tests: `tests/connection.test.ts`, `tests/deployment.test.ts`, `tests/combat.test.ts`, `tests/network.test.ts`, `tests/rooms.test.ts`, `tests/browser/game.spec.ts`, `tests/browser/render.spec.ts`.
-- Documentation: `README.md`, `PROGRESS.md`, `AUDIT.md`.
+- Shared dynamics/combat contracts: `shared/src/config.ts`, `movement.ts`, `types.ts`, `weapons.ts`, new `aim.ts`.
+- Authoritative backend: `server/src/simulation/simulation.ts`, `server/src/weapons/activate.ts`, `projectiles.ts`.
+- Renderer/models: `client/src/game/scene.ts`, new `game/batch.ts`, `maps/arena.ts`, `vehicles/kart.ts`, `weapons/visuals.ts`.
+- Prediction/input delivery: `client/src/networking/prediction.ts` and the independent input timer in `game/scene.ts`.
+- Effects/audio: `client/src/effects/particles.ts`, `audio.ts`, new `driving-audio.ts`.
+- UI: `client/src/main.tsx`, `ui/Hud.tsx`, new `ui/upgrade.css`; existing menu/lobby/results behavior is preserved.
+- Regressions: new `tests/stability.test.ts`, `aim.test.ts`, `effects.test.ts`, `audio.test.ts`; updated `prediction.test.ts`, `network.test.ts`, `browser/game.spec.ts`.
+- Documentation: `README.md`, `AUDIT.md`, `PROGRESS.md`.
+
+`render.yaml`, runtime dependencies, deployment scripts, and environment contracts are unchanged. The official Blueprint schema check passed with the free backend and free Static Site.

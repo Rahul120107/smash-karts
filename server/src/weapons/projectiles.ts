@@ -58,12 +58,19 @@ export function stepProjectiles(world: CombatWorld): void {
     if (p.kind === 'homing') steerHoming(world, p);
     const old = { x: p.x, y: p.y, z: p.z };
     const next = { x: p.x + p.vx * DT, y: p.y + p.vy * DT, z: p.z + p.vz * DT };
+    if (p.maxRange !== undefined) {
+      const stepLength = distance(old, next), remaining = Math.max(0, p.maxRange - (p.travelled ?? 0));
+      const fraction = stepLength > remaining ? remaining / stepLength : 1;
+      next.x = lerp(old.x, next.x, fraction); next.y = lerp(old.y, next.y, fraction); next.z = lerp(old.z, next.z, fraction);
+      p.travelled = (p.travelled ?? 0) + Math.min(stepLength, remaining);
+    }
     let hit = wallHit(old, next, p.radius);
     const terrain = terrainHit(old, next, p.radius);
     if (terrain !== null && (hit === null || terrain < hit)) hit = terrain;
     let victim: string | null = null;
     for (const k of world.players.values()) {
       if (k.id === p.owner || k.health <= 0) continue;
+      if (p.origin && p.maxRange !== undefined && distance(p.origin, { x: k.x, y: k.y + 0.65, z: k.z }) > p.maxRange) continue;
       const t = segmentSphere(old, next, { x: k.x, y: k.y + 0.65, z: k.z }, CONFIG.kartRadius + p.radius);
       if (t !== null && (hit === null || t < hit)) { hit = t; victim = k.id; }
     }
@@ -75,6 +82,9 @@ export function stepProjectiles(world: CombatWorld): void {
         world.emit({ kind: 'impact', player: p.owner, x: p.x, y: p.y, z: p.z });
       }
       world.projectiles.delete(p.id);
-    } else Object.assign(p, next);
+    } else {
+      Object.assign(p, next);
+      if (p.maxRange !== undefined && (p.travelled ?? 0) >= p.maxRange) world.projectiles.delete(p.id);
+    }
   }
 }

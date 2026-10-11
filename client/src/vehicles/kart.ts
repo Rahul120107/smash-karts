@@ -3,7 +3,7 @@ import { batchStatic } from '../game/batch.js';
 import { newSuspension, type SuspensionState } from './animation.js';
 export interface KartVisual {
   group: THREE.Group; chassis: THREE.Group; wheels: THREE.Group[]; steering: THREE.Group[]; suspension: SuspensionState;
-  turret: THREE.Group; cannon: THREE.Group; missileMarker: THREE.Mesh; shield: THREE.Mesh; boost: THREE.Mesh; contact: THREE.Mesh; label: THREE.Sprite;
+  turret: THREE.Group; cannon: THREE.Group; orbit: THREE.Group; missileMarker: THREE.Mesh; shield: THREE.Mesh; boost: THREE.Mesh; contact: THREE.Mesh; label: THREE.Sprite;
 }
 /** Rounded, original aerodynamic shell with compact battle-kart proportions. */
 export function kartShell(sections: [number, number, number][]) {
@@ -84,6 +84,16 @@ export function createKart(color: number, name: string): KartVisual {
   const carriage = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.18, 0.65), paint); carriage.position.y = -0.22; cannon.add(carriage);
   const bore = new THREE.Mesh(new THREE.CircleGeometry(0.19, 12), dark); bore.position.z = 0.81; cannon.add(bore);
   batchStatic(cannon); cannon.visible = false; chassis.add(cannon);
+  const orbit = new THREE.Group(), orbitMaterial = new THREE.MeshStandardMaterial({color:0xd7a4ff,metalness:.6,roughness:.35,emissive:0x543477,emissiveIntensity:.5});
+  for(let i=0;i<3;i++) {
+    const angle=i*Math.PI*2/3,x=Math.sin(angle)*2.15,z=Math.cos(angle)*2.15;
+    const ball=new THREE.Mesh(new THREE.IcosahedronGeometry(.29,0),orbitMaterial);ball.position.set(x,0,z);orbit.add(ball);
+    for(let j=0;j<4;j++) {
+      const spike=new THREE.Mesh(new THREE.ConeGeometry(.08,.23,4),orbitMaterial);
+      const a=j*Math.PI/2;spike.position.set(x+Math.sin(a)*.3,0,z+Math.cos(a)*.3);spike.rotation.set(Math.PI/2,a,0);orbit.add(spike);
+    }
+  }
+  batchStatic(orbit);orbit.position.y=.65;orbit.visible=false;group.add(orbit);
   const shield = new THREE.Mesh(new THREE.IcosahedronGeometry(1.65, 1), new THREE.MeshBasicMaterial({ color: 0x71e2ff, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide }));
   shield.position.y = 0.8; shield.visible = false; group.add(shield);
   const missileMarker = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.035, 3, 20, Math.PI * 1.7), new THREE.MeshBasicMaterial({ color: 0xf6a5ff, transparent: true, opacity: 0.7, depthWrite: false }));
@@ -96,5 +106,5 @@ export function createKart(color: number, name: string): KartVisual {
   ctx.fillStyle = '#12273de6'; ctx.beginPath(); ctx.roundRect(0, 4, 512, 84, 24); ctx.fill(); ctx.fillStyle = '#fff6e5'; ctx.fillText(name, 256, 61);
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })); label.position.set(0, 2.5, 0); label.scale.set(2.8, 0.525, 1); group.add(label);
-  return { group, chassis, wheels, steering, turret, cannon, missileMarker, shield, boost, contact, label, suspension: newSuspension() };
+  return { group, chassis, wheels, steering, turret, cannon, orbit, missileMarker, shield, boost, contact, label, suspension: newSuspension() };
 }

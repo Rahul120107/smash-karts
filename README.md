@@ -1,6 +1,6 @@
 # Crossfire Karts
 
-An original browser-based 3D kart combat game on Sunbreak Island. Anonymous private rooms, up to eight players by default, three-minute battles, nine weapons/power-ups, authoritative damage and scores, respawning, and replay. Original procedural tropical scenery and sporty battle karts need no downloaded art or sound assets. No accounts, database, cosmetics, shops, or progression.
+An original browser-based 3D kart combat game on Sunbreak Island, our single Smash Island-inspired arena, with Free For All as the only mode. Anonymous private rooms, eight players maximum, three-minute battles, twelve weapons/power-ups, authoritative damage and scores, respawning, and replay. Original procedural tropical scenery and sporty battle karts need no downloaded art or sound assets. No accounts, database, cosmetics, shops, or progression.
 
 ## Run locally
 
@@ -90,14 +90,16 @@ Troubleshooting:
 | W / ↑ | Accelerate |
 | S / ↓ | Brake, then reverse |
 | A / ←, D / → | Steer |
-| Space (press once) | Start the equipped weapon's complete attack |
+| Space (press once) | Activate one weapon use; machine gun runs its full burst |
 | Shift (hold) | Drift with reduced lateral grip |
 
 Drive through glowing gold boxes with an empty weapon slot to collect a random weapon. A collected box disappears immediately and returns at its original location after exactly **ten seconds of server simulation time** (600 ticks). Each box has an independent timer. Collection sparks and a glowing return animation mark the transitions. The server broadcasts pickup changes immediately, and snapshots include the active state and deadline so late joiners see the correct boxes. Inactive boxes cannot grant weapons; a new match resets every box. Unspent weapons are retained when driving over other boxes. Projectiles fire forward; the machine gun assists toward a visible enemy within its forward cone and leads its velocity. Its bullets still travel, have limited range, and can miss. Homing missiles select a nearby visible enemy ahead. Mines drop behind you. Watch the HUD for ammo, hull health, shield/boost time, respawn protection, match time, and scores. The minimap marks players, walls, and available boxes.
 
-Press Space once to start a full server-run attack: 30 machine-gun bullets, three rockets, two homing missiles, one mine/bomb, one five-projectile spread, or one heavy cannonball. Shield and boost activate their full duration. Releasing Space does not stop an attack, and holding it does not activate another pickup. Unspent pickups remain equipped until activated; completed weapons leave the slot empty. Every shot recalculates assisted machine-gun aim, so the burst can follow and switch valid enemies.
+Press Space once for a complete 30-round automatic machine-gun burst. Other projectile weapons launch **one shot per press**, retaining their unused ammunition: rockets have three shots, homing missiles two, heavy bullets three, mines three, and the old cannon four. Bomb, blast missile and scatter spread each have one use. Invincibility, Orbit ram and boost activate their full durations. Release Space and press again after the cooldown to use another individual round; holding Space never repeats a use or activates a replacement pickup. Exhausted weapons leave the slot empty. Every automatic bullet recalculates assisted aim, so a burst can follow and switch valid enemies. The HUD shows reloading while another use is unavailable.
 
-An elimination earns one point. Your own weapons can never damage you: direct hits, mines, delayed bombs and all explosions retain the original owner's ID and exclude that owner on the server. Enemy damage and environmental collisions remain active. Tied scores are ordered by fewer deaths; a tie on both is a shared victory. Eliminated karts respawn after 2.5 seconds at a spawn far from living opponents, with two seconds of protection. Walls occlude splash damage. Ramps can launch a fast kart into the air.
+An elimination earns one point. Your own weapons can never damage you: direct hits, mines, delayed bombs and all explosions retain the original owner's ID and exclude that owner on the server. Enemy damage and environmental collisions remain active. **Everyone tied on the highest elimination score shares victory.** Fewer deaths/name/ID only order tied display rows. The server freezes winner IDs when time expires. Eliminated karts respawn after three seconds at a spawn far from living opponents, with two seconds of protection. Walls and terrain occlude splash damage. Ramps can launch a fast kart into the air.
+
+Invincibility protects against damage for five seconds and eliminates an unprotected opponent on close contact. Orbit ram rotates three original spiked orbs around your kart for five seconds; its contact attack does not grant immunity. Contact range, height separation and obstacle visibility are checked by the server. Simultaneous unprotected orbit contacts resolve together, allowing both players to earn an elimination instead of favoring join order. Both powers expire independently of the consumed weapon slot and clear on death or replay.
 
 Sunbreak Island retains the tested **112 × 112 unit** combat layout, approximately **2.4 times** the original arena area. A twelve-unit curved outer road connects wide lanes, open combat plazas and curved western shortcuts. Five ramps include a southern platform and a raised eastern river crossing with a flat wood deck and physical rails. A northern stone tunnel has a 12-unit corridor and four-unit clearance. Thirty independent pickups cover central, outer and elevated routes. Safe spawn positions, palm trunks, barriers, tunnel walls/ceiling and bridge rails share server/client geometry. Stone surfaces have tiny visual bevels inside conservative collider boxes.
 
@@ -158,7 +160,7 @@ Machine-gun assistance is configured by `WEAPONS.machineGun.aimAssist`: 28-unit 
 
 Kart body and static arena parts are merged by material. Models, asphalt grain, road paint, cargo props, trees, sky, pickups and sounds are original procedural assets. Effects use 512 particle instances, 256 tyre marks and 16 shock rings, costing at most three effect draw calls. Shadows use one 1024 map refreshed at up to 20 Hz during games. Menu/lobby/results use a static arena view that redraws on scene/phase/resize changes, rather than continuously consuming GPU time. Raster pixel ratio is capped at 1.25 and drops to 1 for slow foreground matches; after three consistently slow samples it drops to 0.85 with lightweight contact shadows. This changes rendering quality only. Renderer statistics are exposed as attributes on `.game-canvas` for browser tests, without a gameplay debug panel.
 
-Engine/harmonic oscillators and a looping tyre-noise source start once after audio unlock. Smooth gain/pitch changes follow speed/load and actual grounded sideways slip. Parked, straight-driving and airborne karts do not produce drift sound or marks. Combat sounds have a 12-voice budget, contact sounds are rate-limited, and shield/boost activation avoids duplicate firing audio. HUD health, speed/slip, ammo, target feedback, final-seconds countdown, live standings, kill feed and results share a responsive arcade style with reduced-motion support.
+Engine/harmonic oscillators and a looping tyre-noise source start once after audio unlock. Smooth gain/pitch changes follow speed/load and actual grounded sideways slip. Parked, straight-driving and airborne karts do not produce drift sound or marks. Every weapon has an original synthesized envelope in `client/src/effects/weapon-audio.ts`; combat sounds have a 12-voice budget, contact sounds are rate-limited, and shield/boost activation avoids duplicate firing audio. Continuous shield contact feedback is limited to one pulse per 150 ms per attacker/target pair without delaying enemy damage. HUD health, speed/slip, ammo/reloading, target feedback, final-seconds countdown, live standings, kill feed and shared-victory results share a responsive arcade style with reduced-motion support.
 
 ## Updating the existing Render deployment
 
@@ -174,14 +176,17 @@ Global simulation tuning is in `shared/src/config.ts`; map walls, ramps, spawns,
 | Weapon | Uses/ammo | Cooldown | Damage | Behavior |
 |---|---:|---:|---:|---|
 | Machine gun | 30 | 0.105 s | 12 | Complete automatic burst; 76 units/s, 28-unit range, cone assistance, velocity lead and slight spread |
-| Rocket | 3 | 0.65 s | 72 max | Complete three-rocket sequence; 32 units/s, 5.5-unit blast |
-| Homing missile | 2 | 0.85 s | 65 max | Two-missile sequence; visible target within 36 units, configured turn response, 4.5-unit blast |
-| Mine | 1 | 0.6 s | 85 max | 0.7 s arming delay, enemy proximity, 5-unit blast, expires at 22 s |
+| Rocket | 3 | 0.65 s | 72 max | One per press; 32 units/s, 5.5-unit blast |
+| Homing missile | 2 | 0.85 s | 65 max | One per press; visible unprotected target within 36 units, configured turn response, 4.5-unit blast |
+| Mine | 3 | 0.6 s | 85 max | One per press; 0.7 s arming delay, enemy proximity, 5-unit blast, expires at 22 s |
 | Bomb | 1 | 0.75 s | 90 max | Gravity-driven lob and bounce, 1.6 s fuse, 6-unit blast |
-| Shield | 1 | 0.2 s | — | Prevents damage for 5 s |
+| Invincibility | 1 | 0.2 s | 100/contact | Prevents damage for 5 s; 1.95-unit contact range |
 | Speed boost | 1 | 0.5 s | — | 55% higher top speed for 4 s |
 | Scatter blaster | 1 | 0.55 s | 22/pellet | Five-projectile spread per activation |
-| Old cannon | 1 | 0.8 s | 78 max | One 0.44-radius iron cannonball; 26 units/s, gravity-driven arc, 5-unit blast, heavy smoke/audio |
+| Old cannon | 4 | 0.8 s | 78 max | One 0.44-radius iron cannonball per press; 26 units/s, gravity-driven arc, 5-unit blast, heavy smoke/audio |
+| Heavy bullets | 3 | 0.3 s | 45 | One straight shot per press; 64 units/s, no aim assist or splash |
+| Blast missile | 1 | 0.9 s | 140 max | Larger slow missile, 19 units/s, 10-unit blast |
+| Orbit ram | 1 | 0.4 s | 100/contact | Rotating contact attack for 5 s; 2.6-unit range, no damage immunity |
 
 Blast damage falls linearly to 30% at the configured outer radius. The server owns randomness, ammunition, activation times, lifetimes, collision, damage, and cleanup. No client-only hit or elimination endpoint exists.
 
@@ -190,7 +195,7 @@ Blast damage falls linearly to 30% at the configured outer radius. The server ow
 | `PORT` | `3001` | Node HTTP and WebSocket port |
 | `HOST` | `0.0.0.0` | Server bind address |
 | `MATCH_SECONDS` | `180` | Match duration, integer 5–3600 |
-| `ROOM_CAPACITY` | `8` | Room capacity, integer 2–16 |
+| `ROOM_CAPACITY` | `8` | Room capacity, integer 2–8; cannot exceed eight |
 | `NODE_ENV` | unset | `production` requires an explicit origin allowlist and forces public binding |
 | `SERVE_CLIENT` | `true` | `false` for the separate Render backend; health/WebSockets remain available |
 | `ALLOWED_ORIGINS` | unset locally | Exact comma-separated HTTP(S) origins; required in production; controls HTTP CORS and WebSocket upgrades |
@@ -222,23 +227,23 @@ Coverage includes room creation/joining, invalid rooms, forced duplicate codes, 
 
 See [AUDIT.md](AUDIT.md) for the current audit findings and test evidence, and [PROGRESS.md](PROGRESS.md) for milestones.
 
-Latest **`npm run check` passed** TypeScript, both production builds, **212 unit/integration tests across 16 files**, **all 13 Chromium scenarios**, and compiled eight-client production smoke. New coverage verifies tunnel clearance/ceilings/line of sight, bridge approaches/deck/rails, solid palm contacts, terrain-aware camera clipping, suspension settling, visible outward-facing kart/road geometry, bounded environmental pools, ambient lifecycle and instanced pickup transforms. Existing coverage retains all nine weapons, owner immunity, complete single-press attacks, machine-gun target switching/occlusion, cannon arcs, drift/stability/prediction, exact ten-second pickup deadlines, contested collection, late joining, health/score/respawn/replay, 120 ms latency, reconnect, eight real browsers and separate HTTPS/WSS origins. The island browser scenario drives/fires through the new routes and records adapter/frame statistics. Production smoke covers port/public binding, CORS/health, eight clients, combat/snapshots, match lifecycle and disconnect/rejoin. Its Windows shutdown harness invokes the SIGTERM handler through IPC; actual Linux signal delivery is not claimed.
+Latest **`npm run check` passed** TypeScript, both production builds, **259 unit/integration tests across 17 files**, **all 13 Chromium scenarios** (5.9 minutes), and compiled eight-client production smoke. The reference-informed release adds 47 test cases: all twelve weapons and owner immunity, retained single-shot inventory, cooldown/held-key behavior, new projectile/contact damage, simultaneous contact fairness, bounded shield feedback, frozen shared winners, enforced eight-player capacity, terrain-blocked homing/muzzles/splash, full-height ceiling prediction and distinct synthesized voices. Existing checks retain flat/ramp/drift stability, bridge/tunnel routes, camera avoidance, geometry/materials, bounded pools, exact ten-second pickup deadlines, contested collection and late joining, timers/health/respawn/replay, 120 ms latency, reconnect, eight concurrent rendered browsers and separate HTTPS/WSS origins. Browser screenshots of the lobby and Orbit ram combat were inspected. Production smoke covers the compiled entry, port/public binding, CORS/health, eight clients, combat/snapshots, match lifecycle and disconnect/rejoin. Its Windows shutdown harness invokes the SIGTERM handler through IPC; actual Linux signal delivery is not claimed.
 
-Local graphics measurements on Windows, Intel **i5-1334U**, **15.7 GiB RAM**:
+Local graphics measurements on **2026-10-12**, Windows, Intel **i5-1334U**, **15.7 GiB RAM**:
 
 | Renderer/workload | Viewport | FPS | Mean / p95 frame time | Sampled draws / triangles |
 |---|---|---:|---|---|
-| Intel Iris Xe, D3D11; one rendered browser + seven native peers; full quality | 1920×1080 | 60.06 | 16.65 / 16.80 ms | 153 / 52,234 |
-| SwiftShader; one rendered browser; compatibility quality | 1920×1080 | 5.73 | 174.58 / 316.70 ms | 52 / 35,868 |
-| SwiftShader; eight rendered browsers; compatibility quality | 640×720 each | 1–2 each | Maximum frame gaps 817–950 ms | 71–143 / 38,554–47,858 |
+| Intel Iris Xe, D3D11; one rendered browser + seven native peers; full quality | 1920×1080 | 60.07 | 16.65 / 16.70 ms | 151 / 51,564 |
+| SwiftShader; one rendered browser + seven native peers; compatibility quality | 1920×1080 | 4.91 | 203.81 / 350.00 ms | 94 / 41,218 |
+| SwiftShader; eight rendered browsers; compatibility quality | 640×720 each | 1–2 each | Maximum frame gaps 733–867 ms | 71–142 / 38,554–47,642 |
 
-The hardware result is a five-second moving-camera sample after six seconds of warmup, with shadows/reflections enabled. It is not a whole-map, worst-case combat, eight-device or Render/WAN benchmark. The software runs verify functionality and bounds; they are not hardware GPU results. Machine-readable evidence is in [docs/performance-2026-10-11.json](docs/performance-2026-10-11.json), with implementation/test details in [AUDIT.md](AUDIT.md) and [PROGRESS.md](PROGRESS.md). Reproduce measurements with the optional profiling script above.
+The hardware result is a five-second moving-camera sample after six seconds of warmup, with shadows/reflections enabled and no renderer errors. It is not a whole-map, worst-case combat, eight-device or Render/WAN benchmark. The software runs verify functionality and bounds; they are not hardware GPU results and do not meet the frame-rate goals. Machine-readable current evidence is in [docs/performance-2026-10-12.json](docs/performance-2026-10-12.json); the [previous report](docs/performance-2026-10-11.json) is retained for history. Random weapons and camera framing differ between samples, so these runs do not establish a controlled performance improvement. Reproduce measurements with the optional profiling script above.
 
-The benchmark simulates a three-minute match with eight karts continuously attacking and instantly receiving replacement weapons, intentionally heavier combat than normal pickup-limited play. Alternating press/release controls activate successive complete attacks without bypassing cooldowns. The final local run after browser checks completed in **864 ms**, with **0.229 ms p95** tick plus snapshot cost, **43** peak projectiles, **10,112-byte** average snapshots and **8** eliminations. Estimated outbound payload is **1,580 KiB/s** per eight-player room, excluding transport overhead and extra pickup-transition broadcasts. These measurements do not establish Render capacity or browser frame rate.
+The benchmark simulates a three-minute match with eight karts continuously attacking and instantly receiving replacement weapons, intentionally heavier combat than normal pickup-limited play. Alternating press/release controls activate successive uses without bypassing cooldowns. The final local run after browser/profiling checks completed in **564 ms**, with **0.131 ms p95** tick plus snapshot cost, **28** peak projectiles, **7,704-byte** average snapshots and **14** eliminations. Estimated outbound payload is **1,204 KiB/s** per eight-player room, excluding transport overhead and extra pickup-transition broadcasts. The new weapon mix changes this workload. These measurements do not establish Render capacity or browser frame rate.
 
 ## Reference and limits
 
-Smash Karts is a gameplay inspiration only. Direct interactive inspection of the reference game was not performed. Pickup pacing, acceleration/turning, weapon balance, hit volumes, blast occlusion, respawn protection, and arena layout are original design assumptions, not claims of exact reproduction. No proprietary code, models, branding, sounds, or downloaded game assets are used. Three.js and Vite integration was checked against their [renderer documentation](https://threejs.org/docs/pages/WebGLRenderer.html) and [server/proxy documentation](https://vite.dev/config/server-options).
+Smash Karts is a gameplay inspiration. Public publisher documentation and an official-game menu inspection informed this release; exact driving parameters, projectile speeds, targeting internals and Smash Island geometry were not measured. See [reference findings and deliberate differences](docs/reference-gameplay.md). Pickup timing, combat tuning, hit volumes, occlusion and arena layout use independent implementation choices. No proprietary code, models, branding, sounds, or downloaded game assets are used. Three.js and Vite integration was checked against their [renderer documentation](https://threejs.org/docs/pages/WebGLRenderer.html) and [server/proxy documentation](https://vite.dev/config/server-options).
 
 The two supplied visual references were available as descriptions only; no reference image files were accessible in the workspace. Island geometry, kart shapes, textures, shaders and sounds are original. This is an optimized stylized release, with distant scenic mountains rather than a fully traversable mountainous world. Multi-level overlapping driving floors, deep-water traversal and physically simulated wheel suspension remain outside the current solver. Mystery pickup boxes retain random assignment, with weapon-specific colors shown on collection and in the HUD.
 

@@ -4,7 +4,9 @@ export interface Room { code: string; host: string; simulation: Simulation; last
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export class RoomManager {
   rooms = new Map<string, Room>(); memberships = new Map<string, string>();
-  constructor(public capacity: number = CONFIG.capacity, private duration: number = CONFIG.matchDuration, private codeRandom: () => number = Math.random) {}
+  constructor(public capacity: number = CONFIG.capacity, private duration: number = CONFIG.matchDuration, private codeRandom: () => number = Math.random) {
+    if (!Number.isInteger(capacity) || capacity < 2 || capacity > CONFIG.capacity) throw new Error('Room capacity must be between 2 and 8.');
+  }
   create(id: string, name: string): Room {
     if (this.memberships.has(id)) throw new Error('Leave your current room first.');
     let code = '';

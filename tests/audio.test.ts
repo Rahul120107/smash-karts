@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GameAudio } from '../client/src/effects/audio.js';
 import { duel } from './helpers.js';
+import { WEAPON_IDS } from '../shared/src/weapons.js';
 
 class Param {
   value = 0;
@@ -30,6 +31,16 @@ function setup() {
   const audio = new GameAudio(); target.dispatchEvent(new Event('pointerdown')); return { audio, target, context: Context.instances[0]! };
 }
 describe('continuous WebAudio lifecycle', () => {
+  it('renders a distinct audible envelope for each weapon and releases every voice', () => {
+    const { audio, context } = setup(); const signatures = new Set<string>();
+    for (const weapon of WEAPON_IDS) {
+      const kind = weapon === 'shield' ? 'shield' : weapon === 'boost' ? 'boost' : 'fire';
+      audio.event({ id: 1, at: 0, x: 0, y: 0, z: 0, player: 'a', kind, weapon }, 0);
+      const voice = context.oscillators.at(-1)!;
+      signatures.add(`${voice.type}:${voice.frequency.value}`); voice.onended?.();
+    }
+    expect(signatures.size).toBe(WEAPON_IDS.length); expect(audio.activeVoices).toBe(0); audio.dispose();
+  });
   it('gives cannon launch a heavy synthesized voice and noise instead of the machine-gun sound', () => {
     const { audio, context } = setup(), effect = { id: 1, at: 0, x: 0, y: 0, z: 0, player: 'a', kind: 'fire' as const };
     audio.event({ ...effect, weapon: 'cannon' }, 0); audio.event({ ...effect, id: 2, weapon: 'machineGun' }, 0);

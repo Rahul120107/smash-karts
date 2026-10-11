@@ -10,6 +10,9 @@ export function WeaponIcon({ weapon }: { weapon: WeaponId | null }) {
     boost: <><path d="m24 3-16 20h11l-3 14 17-22H22Z"/></>,
     scatter: <><path d="M4 16h15v9H4zM19 19h6M11 25l-2 10h6l3-10M28 19h8M26 11l7-5M26 27l7 5"/></>,
     cannon: <><path d="m6 17 25-5 3 10-25 5Z M15 26l-3 6h16l-3-8M29 13l3 10"/><circle cx="11" cy="32" r="5"/><circle cx="27" cy="32" r="5"/><circle cx="36" cy="8" r="2"/></>,
+    bullets: <><path d="M8 31V15l5-8 5 8v16ZM23 31V15l5-8 5 8v16ZM8 25h10M23 25h10"/></>,
+    blastMissile: <><path d="m11 27 4-13L27 3l10 10-11 12-13 4ZM15 14l11 11M11 30l-6 5M8 24H3M18 34v3"/><circle cx="24" cy="16" r="3"/></>,
+    orbit: <><circle cx="20" cy="20" r="5"/><ellipse cx="20" cy="20" rx="16" ry="12"/><path d="m9 6 2 4 4 2-4 2-2 4-2-4-4-2 4-2ZM30 23l2 4 4 2-4 2-2 4-2-4-4-2 4-2Z"/></>,
   };
   return <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{weapon ? paths[weapon] : <><path d="M13 13a7 7 0 1 1 12 5c-4 2-5 3-5 7"/><circle cx="20" cy="32" r="1"/></>}</svg>;
 }

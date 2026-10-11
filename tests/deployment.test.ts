@@ -11,7 +11,7 @@ describe('deployment configuration', () => {
     expect(serverConfig({ NODE_ENV: 'production', PORT: '10000', HOST: 'localhost', ALLOWED_ORIGINS: 'https://game.example/', SERVE_CLIENT: 'false' }))
       .toMatchObject({ port: 10000, host: '0.0.0.0', allowedOrigins: ['https://game.example'], serveClient: false });
   });
-  it.each([{ PORT: '0' }, { ROOM_CAPACITY: '1' }, { MATCH_SECONDS: '5.5' }, { SERVE_CLIENT: 'yes' }, { NODE_ENV: 'production' },
+  it.each([{ PORT: '0' }, { ROOM_CAPACITY: '1' }, { ROOM_CAPACITY: '9' }, { ROOM_CAPACITY: '16' }, { MATCH_SECONDS: '5.5' }, { SERVE_CLIENT: 'yes' }, { NODE_ENV: 'production' },
     { ALLOWED_ORIGINS: '*' }, { ALLOWED_ORIGINS: 'https://game.example/path' }, { ALLOWED_ORIGINS: 'https://user:pass@game.example' }])('rejects invalid environment %j', env => {
     expect(() => serverConfig(env)).toThrow();
   });

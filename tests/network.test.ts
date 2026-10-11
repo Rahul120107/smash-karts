@@ -4,6 +4,7 @@ import type { ClientMessage, ServerMessage, Snapshot } from '../shared/src/types
 import { NEUTRAL } from '../shared/src/movement.js';
 import { startServer } from '../server/src/networking/server.js';
 import { equip } from './helpers.js';
+import { WEAPONS } from '../shared/src/weapons.js';
 class Peer {
   messages: ServerMessage[] = []; private listeners = new Set<() => void>();
   constructor(public ws: WebSocket) { ws.on('message', raw => { this.messages.push(JSON.parse(raw.toString()) as ServerMessage); for (const fn of this.listeners) fn(); }); }
@@ -30,6 +31,40 @@ async function setup(duration = 180) {
   return { a, b, idA: welcomeA.id, idB: welcomeB.id, code: welcomeA.code };
 }
 describe('real WebSocket multiplayer integration', () => {
+  it.each(['bullets', 'blastMissile', 'orbit', 'shield'] as const)('synchronizes server-owned %s activation, damage and remaining inventory', async weapon => {
+    const { a, b, idA, idB, code } = await setup(12); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
+    const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, target = world.players.get(idB)!;
+    Object.assign(shooter, { x: -8, y: 0, z: 0, yaw: 0, invulnerableUntil: 0 });
+    Object.assign(target, { x: -8, y: 0, z: weapon === 'orbit' || weapon === 'shield' ? 1.8 : 6, invulnerableUntil: 0 });
+    equip(shooter, weapon); const since = world.time;
+    a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2 }] });
+    const hit = (s: Snapshot) => s.time > since && s.events.some(e => e.kind === 'hit' && e.player === idA && e.target === idB);
+    const states = await Promise.all([a.state(hit), b.state(hit)]);
+    expect(states[0]!.tick).toBe(states[1]!.tick);
+    for (const [index, state] of states.entries()) {
+      const owner = state.players.find(p => p.id === idA)!;
+      expect(owner.health).toBe(100); expect(owner.ammo).toBe(WEAPONS[weapon].ammo - 1);
+      expect(owner.weapon).toBe(WEAPONS[weapon].ammo === 1 ? null : weapon);
+      expect(state.players.find(p => p.id === idB)!.health).toBeLessThan(100);
+      // Events are deltas: the launch was delivered in an earlier snapshot than impact.
+      expect([a, b][index]!.messages.some(m => m.type === 'snapshot' && m.state.events.some(e => e.kind === 'fire' && e.weapon === weapon && e.player === idA))).toBe(true);
+      if (weapon === 'orbit') expect(owner.orbitUntil).toBeGreaterThan(state.time);
+    }
+    b.send({ type: 'contact', target: idA, orbitUntil: 999 });
+    await b.wait(m => m.type === 'error' && m.message.includes('Unsupported')); expect(shooter.health).toBe(100);
+  });
+  it('does not spend rocket inventory automatically or repeat a held key over WebSockets', async () => {
+    const { a, b, idA, idB, code } = await setup(12); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
+    const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, target = world.players.get(idB)!;
+    Object.assign(shooter, { x: -8, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(target, { x: 30, z: 45 }); equip(shooter, 'rocket');
+    const since = world.time;
+    a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 1, fire: true }] });
+    const states = await Promise.all([a.state(s => s.time > since + 1), b.state(s => s.time > since + 1)]);
+    for (const state of states) expect(state.players.find(p => p.id === idA)).toMatchObject({ weapon: 'rocket', ammo: 2, attacking: false });
+    a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 2, fire: true }] }); await b.state(s => s.players.find(p => p.id === idA)?.ack === 2); expect(shooter.ammo).toBe(2);
+    a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 3 }, { ...NEUTRAL, seq: 4, fire: true }] });
+    await b.state(s => s.players.find(p => p.id === idA)?.ammo === 1); expect(shooter.health).toBe(100);
+  });
   it('synchronizes a full assisted machine-gun attack after one press and immediate release', async () => {
     const { a, b, idA, idB, code } = await setup(12); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
     const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, target = world.players.get(idB)!;

@@ -34,14 +34,16 @@ describe('owner immunity across every weapon', () => {
   });
 });
 describe('server-owned single-press attacks', () => {
-  it.each(WEAPON_IDS)('%s completes its full configured attack after immediate key release', id => {
+  it.each(WEAPON_IDS)('%s executes its configured use after immediate key release', id => {
     const { world, a, b } = duel(); b.x = 30; b.z = 45; equip(a, id);
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2, fire: false }]);
     const seen = new Map<number, number>();
     for (let i = 0; i < 240; i++) {
       world.step(); for (const e of world.events) if (e.kind === 'fire' && e.player === a.id) seen.set(e.id, e.at);
     }
-    expect(seen.size).toBe(WEAPONS[id].ammo); expect(a.ammo).toBe(0); expect(a.weapon).toBeNull(); expect(a.attacking).toBe(false);
+    const uses = WEAPONS[id].activation === 'burst' ? WEAPONS[id].ammo : 1;
+    expect(seen.size).toBe(uses); expect(a.ammo).toBe(WEAPONS[id].ammo - uses);
+    expect(a.weapon).toBe(a.ammo === 0 ? null : id); expect(a.attacking).toBe(false);
     const times = [...seen.values()];
     for (let i = 1; i < times.length; i++) expect(times[i]! - times[i - 1]!).toBeGreaterThanOrEqual(WEAPONS[id].cooldown - 1e-9);
     expect(a.health).toBe(CONFIG.maxHealth);

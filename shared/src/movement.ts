@@ -80,9 +80,9 @@ function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number)
 export function resolveCeilings(k: KartState) {
   for (const wall of WALLS) {
     const base = wall.base ?? 0;
-    if (!base || wall.style !== 'tunnel' || k.y >= base || k.y + 1 <= base) continue;
+    if (!base || wall.style !== 'tunnel' || k.y >= base || k.y + CONFIG.kartHeight <= base) continue;
     if (Math.abs(k.x - wall.x) > wall.width / 2 + CONFIG.kartRadius || Math.abs(k.z - wall.z) > wall.depth / 2 + CONFIG.kartRadius) continue;
-    k.y = Math.max(groundHeight(k.x, k.z), base - 1); k.vy = Math.min(0, k.vy);
+    k.y = Math.max(groundHeight(k.x, k.z), base - CONFIG.kartHeight); k.vy = Math.min(0, k.vy);
   }
 }
 
@@ -133,7 +133,7 @@ export function drivingTelemetry(k: KartState) {
 export function resolveWalls(k: KartState): void {
   for (const w of WALLS) {
     const base = w.base ?? 0;
-    if (k.y >= base + w.height || k.y + 1 <= base || base > 0 && w.style === 'tunnel' && k.y < base) continue;
+    if (k.y >= base + w.height || k.y + CONFIG.kartHeight <= base || base > 0 && w.style === 'tunnel' && k.y < base) continue;
     const minX = w.x - w.width / 2, maxX = w.x + w.width / 2;
     const minZ = w.z - w.depth / 2, maxZ = w.z + w.depth / 2;
     const cx = clamp(k.x, minX, maxX), cz = clamp(k.z, minZ, maxZ);

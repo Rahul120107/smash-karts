@@ -7,6 +7,8 @@ import { stepProjectiles } from '../weapons/projectiles.js';
 import { collectPickups } from './pickups.js';
 import type { CombatWorld } from './world.js';
 import { machineGunAim } from '../../../shared/src/aim.js';
+import { stepContactAttacks } from '../combat/contact.js';
+import { matchWinners } from '../../../shared/src/match.js';
 
 interface Controls { queue: Input[]; last: Input; lastReceived: number; highest: number; fireDown: boolean; pressed: boolean }
 export class Simulation implements CombatWorld {
@@ -14,6 +16,7 @@ export class Simulation implements CombatWorld {
   players = new Map<string, PlayerState>(); projectiles = new Map<number, Projectile>();
   pickups: Pickup[] = []; events: GameEvent[] = [];
   readonly attacks = new AttackSequences();
+  private winnerIds: string[] = [];
   private projectileId = 0; private eventId = 0; private controls = new Map<string, Controls>();
   constructor(public duration: number = CONFIG.matchDuration, public random: () => number = Math.random) { this.resetPickups(); }
   nextProjectileId() { return ++this.projectileId; }
@@ -21,7 +24,7 @@ export class Simulation implements CombatWorld {
   private resetPickups() { this.pickups = PICKUP_POSITIONS.map((p, id) => ({ ...p, id, active: true, availableAt: 0 })); }
   addPlayer(id: string, name: string): PlayerState {
     const p: PlayerState = { id, name, color: COLORS[this.players.size % COLORS.length]!, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0,
-      health: CONFIG.maxHealth, score: 0, deaths: 0, weapon: null, ammo: 0, nextFire: 0, shieldUntil: 0, boostUntil: 0, invulnerableUntil: 0, respawnAt: 0, ack: 0 };
+      health: CONFIG.maxHealth, score: 0, deaths: 0, weapon: null, ammo: 0, nextFire: 0, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, invulnerableUntil: 0, respawnAt: 0, ack: 0 };
     this.players.set(id, p); this.controls.set(id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0, fireDown: false, pressed: false });
     this.spawn(p, this.phase === 'playing' ? undefined : this.players.size - 1); return p;
   }
@@ -33,12 +36,12 @@ export class Simulation implements CombatWorld {
       return nearest(b) - nearest(a);
     })[0]!;
     Object.assign(p, spawn, { y: groundHeight(spawn.x, spawn.z), vx: 0, vy: 0, vz: 0, health: CONFIG.maxHealth, respawnAt: 0,
-      weapon: null, ammo: 0, nextFire: 0, invulnerableUntil: this.time + CONFIG.spawnProtection, shieldUntil: 0, boostUntil: 0, aimTarget: null, attacking: false, yawRate: 0 });
+      weapon: null, ammo: 0, nextFire: 0, invulnerableUntil: this.time + CONFIG.spawnProtection, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, aimTarget: null, attacking: false, yawRate: 0 });
     this.attacks.cancel(p);
     const c = this.controls.get(p.id)!; c.queue = []; c.last = { ...NEUTRAL }; c.lastReceived = -1;
   }
   start() {
-    this.phase = 'playing'; this.time = 0; this.tick = 0; this.projectiles.clear(); this.attacks.clear(); this.events = []; this.resetPickups();
+    this.phase = 'playing'; this.time = 0; this.tick = 0; this.projectiles.clear(); this.attacks.clear(); this.events = []; this.winnerIds = []; this.resetPickups();
     let index = 0;
     for (const p of this.players.values()) {
       p.score = 0; p.deaths = 0; p.ack = 0;
@@ -59,7 +62,7 @@ export class Simulation implements CombatWorld {
   step() {
     if (this.phase !== 'playing') return;
     this.tick++; this.time = this.tick * DT;
-    if (this.time + 1e-9 >= this.duration) { this.time = this.duration; this.phase = 'finished'; this.projectiles.clear(); this.attacks.clear(); for (const p of this.players.values()) p.attacking = false; return; }
+    if (this.time + 1e-9 >= this.duration) { this.time = this.duration; this.phase = 'finished'; this.winnerIds = matchWinners(this.players.values()); this.projectiles.clear(); this.attacks.clear(); for (const p of this.players.values()) p.attacking = false; return; }
     for (const p of this.players.values()) {
       const c = this.controls.get(p.id)!;
       const command = c.queue.shift();
@@ -82,11 +85,11 @@ export class Simulation implements CombatWorld {
       if (this.time - c.lastReceived <= CONFIG.inputTimeout && c.pressed) this.attacks.begin(this, p);
       this.attacks.step(this, p);
     }
-    stepProjectiles(this); collectPickups(this);
+    stepContactAttacks(this); stepProjectiles(this); collectPickups(this);
     this.events = this.events.filter(e => this.time - e.at < 0.75).slice(-256);
   }
   snapshot(code: string, host: string, capacity: number): Snapshot {
-    return { code, host, phase: this.phase, tick: this.tick, time: this.time, remaining: Math.max(0, this.duration - this.time), duration: this.duration, capacity,
+    return { code, host, phase: this.phase, winnerIds: [...this.winnerIds], tick: this.tick, time: this.time, remaining: Math.max(0, this.duration - this.time), duration: this.duration, capacity,
       players: [...this.players.values()].map(p => ({ ...p })), projectiles: [...this.projectiles.values()].map(p => ({ ...p })),
       pickups: this.pickups.map(p => ({ ...p })), events: this.events.map(e => ({ ...e })) };
   }

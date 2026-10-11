@@ -1,6 +1,7 @@
 import type { GameEvent, KartState, PlayerState } from '../../../shared/src/types.js';
 import { drivingSoundProfile } from './driving-audio.js';
 import { IslandAmbience } from './ambience.js';
+import { FIRING_SOUNDS } from './weapon-audio.js';
 /** Original synthesized audio. Engine and tyre loops start once and use smooth gain/pitch envelopes. */
 export class GameAudio {
   private context: AudioContext | null = null; private master: GainNode | null = null;
@@ -57,18 +58,18 @@ export class GameAudio {
     const ctx = this.context, now = ctx.currentTime;
     if (event.kind === 'collision') { if (now - this.collisionAt < 0.12) return; this.collisionAt = now; }
     const explosive = event.kind === 'explosion' || event.kind === 'elimination';
-    const cannon = event.kind === 'fire' && event.weapon === 'cannon';
+    const firing = event.kind === 'fire' && event.weapon ? FIRING_SOUNDS[event.weapon] : event.kind === 'shield' ? FIRING_SOUNDS.shield : event.kind === 'boost' ? FIRING_SOUNDS.boost : null;
     const chime = ['pickup', 'shield', 'boost', 'respawn'].includes(event.kind);
-    const duration = cannon ? 0.38 : explosive ? 0.4 : chime ? 0.24 : event.kind === 'fire' && event.weapon !== 'machineGun' ? 0.19 : 0.085;
+    const duration = firing?.duration ?? (explosive ? 0.4 : chime ? 0.24 : 0.085);
     const gain = ctx.createGain(); gain.connect(this.master);
-    const volume = (cannon ? 0.5 : explosive ? 0.55 : chime ? 0.24 : 0.2) / (1 + distance / 10);
+    const volume = (firing?.volume ?? (explosive ? 0.55 : chime ? 0.24 : 0.2)) / (1 + distance / 10);
     gain.gain.setValueAtTime(0.001, now); gain.gain.linearRampToValueAtTime(volume, now + 0.005); gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-    const oscillator = ctx.createOscillator(); oscillator.connect(gain); oscillator.type = chime ? 'sine' : explosive || cannon ? 'triangle' : 'square';
-    oscillator.frequency.setValueAtTime(cannon ? 72 : chime ? 480 : explosive ? 90 : event.kind === 'fire' ? 220 : 115, now);
-    oscillator.frequency.exponentialRampToValueAtTime(chime ? 1250 : 35, now + duration);
+    const oscillator = ctx.createOscillator(); oscillator.connect(gain); oscillator.type = firing?.wave ?? (chime ? 'sine' : explosive ? 'triangle' : 'square');
+    oscillator.frequency.setValueAtTime(firing?.from ?? (chime ? 480 : explosive ? 90 : 115), now);
+    oscillator.frequency.exponentialRampToValueAtTime(firing?.to ?? (chime ? 1250 : 35), now + duration);
     let noise: AudioBufferSourceNode | null = null, filter: BiquadFilterNode | null = null;
-    if ((cannon || explosive || event.kind === 'collision' || event.kind === 'impact') && this.noise) {
-      noise = ctx.createBufferSource(); noise.buffer = this.noise; filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = explosive ? 650 : 1200;
+    if ((firing?.noiseHz || explosive || event.kind === 'collision' || event.kind === 'impact') && this.noise) {
+      noise = ctx.createBufferSource(); noise.buffer = this.noise; filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = firing?.noiseHz ?? (explosive ? 650 : 1200);
       noise.connect(filter); filter.connect(gain); noise.start(); noise.stop(now + duration);
     }
     const cleanup = () => { oscillator.disconnect(); noise?.disconnect(); filter?.disconnect(); gain.disconnect(); this.voices.delete(cleanup); };

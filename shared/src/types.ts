@@ -1,5 +1,5 @@
-export type WeaponId = 'machineGun' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'shield' | 'boost' | 'scatter' | 'cannon';
-export type ProjectileKind = 'bullet' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'pellet' | 'cannonball';
+export type WeaponId = 'machineGun' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'shield' | 'boost' | 'scatter' | 'cannon' | 'bullets' | 'blastMissile' | 'orbit';
+export type ProjectileKind = 'bullet' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'pellet' | 'cannonball' | 'slug' | 'blastMissile';
 export interface Vec3 { x: number; y: number; z: number }
 export interface Input { seq: number; throttle: number; steer: number; fire: boolean; drift: boolean }
 export interface KartState extends Vec3 { yaw: number; vx: number; vz: number; vy: number; yawRate?: number }
@@ -9,6 +9,7 @@ export interface PlayerState extends KartState {
   invulnerableUntil: number; respawnAt: number; ack: number;
   aimTarget?: string | null;
   attacking?: boolean;
+  orbitUntil?: number;
 }
 export interface Projectile extends Vec3 {
   id: number; kind: ProjectileKind; owner: string; vx: number; vy: number; vz: number;
@@ -20,6 +21,7 @@ export interface Pickup extends Vec3 { id: number; active: boolean; availableAt:
 export type EffectKind = 'fire' | 'explosion' | 'hit' | 'pickup' | 'pickupSpawn' | 'shield' | 'shieldImpact' | 'boost' | 'elimination' | 'impact' | 'collision' | 'respawn';
 export interface GameEvent extends Vec3 { id: number; kind: EffectKind; at: number; player: string; weapon?: WeaponId; radius?: number; target?: string; pickupId?: number }
 export interface Snapshot {
+  winnerIds?: string[];
   code: string; host: string; phase: 'lobby' | 'playing' | 'finished'; tick: number; time: number;
   remaining: number; duration: number; capacity: number; players: PlayerState[]; projectiles: Projectile[];
   pickups: Pickup[]; events: GameEvent[];

@@ -17,6 +17,6 @@ export function serverConfig(env: NodeJS.ProcessEnv = process.env): ServerOption
   if (env.NODE_ENV === 'production' && !allowedOrigins?.length) throw new Error('Set ALLOWED_ORIGINS to the deployed frontend origin in production.');
   if (env.SERVE_CLIENT !== undefined && !['true', 'false'].includes(env.SERVE_CLIENT)) throw new Error('SERVE_CLIENT must be true or false.');
   return { port: integer('PORT', 3001, 1, 65535), host: env.NODE_ENV === 'production' ? '0.0.0.0' : env.HOST ?? '0.0.0.0',
-    capacity: integer('ROOM_CAPACITY', 8, 2, 16), duration: integer('MATCH_SECONDS', 180, 5, 3600),
+    capacity: integer('ROOM_CAPACITY', 8, 2, 8), duration: integer('MATCH_SECONDS', 180, 5, 3600),
     allowedOrigins, serveClient: env.SERVE_CLIENT !== 'false' };
 }

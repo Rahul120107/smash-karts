@@ -27,8 +27,8 @@ describe('shared tropical routes and finite-height collisions',()=>{
   });
   it('clamps ceiling jumps vertically without an artificial lateral launch',()=>{
     const k={...kart(0,-43),y:3.5,vy:6,vx:8,vz:12};resolveCeilings(k);
-    expect(k.y).toBe(3);expect(k.vy).toBe(0);expect(k.vx).toBe(8);expect(k.vz).toBe(12);
-    moveKart(k,NEUTRAL);expect(k.y).toBeLessThan(3);expect(Math.hypot(k.vx,k.vz)).toBeLessThan(15);
+    expect(k.y).toBe(TUNNEL.clearance-CONFIG.kartHeight);expect(k.vy).toBe(0);expect(k.vx).toBe(8);expect(k.vz).toBe(12);
+    moveKart(k,NEUTRAL);expect(k.y+CONFIG.kartHeight).toBeLessThan(TUNNEL.clearance);expect(Math.hypot(k.vx,k.vz)).toBeLessThan(15);
   });
   it('drives over the bridge deck and both approaches with bounded, predictable landings',()=>{
     const k=kart(BRIDGE.x,-BRIDGE.depth/2-7);let onDeck=false,landed=false;

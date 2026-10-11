@@ -1,15 +1,16 @@
 import type { PlayerState, WeaponId } from '../../../shared/src/types.js';
 import type { CombatWorld } from '../simulation/world.js';
 import { activate } from './activate.js';
+import { WEAPONS } from '../../../shared/src/weapons.js';
 
-/** A press starts a whole pickup attack. Release/latency never interrupts its ammo sequence. */
+/** Only automatic weapons consume a full burst; single shots keep the remaining inventory. */
 export class AttackSequences {
   private active = new Map<string, WeaponId>();
   begin(world: CombatWorld, player: PlayerState): boolean {
     if (this.active.has(player.id)) return false;
     const weapon = player.weapon;
     if (!weapon || !activate(world, player)) return false;
-    if (player.weapon === weapon && player.ammo > 0) this.active.set(player.id, weapon);
+    if (WEAPONS[weapon].activation === 'burst' && player.weapon === weapon && player.ammo > 0) this.active.set(player.id, weapon);
     player.attacking = this.active.has(player.id); return true;
   }
   step(world: CombatWorld, player: PlayerState): void {

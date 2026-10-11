@@ -206,6 +206,8 @@ export class ArenaGame {
     const shieldHit = state.events.some(e => e.kind === 'shieldImpact' && e.target === p.id && state.time - e.at < 0.18);
     (visual.shield.material as THREE.MeshBasicMaterial).opacity = shieldHit ? 0.38 : 0.12 + Math.sin(now / 240) * 0.035;
     visual.boost.visible = state.time < p.boostUntil; visual.boost.scale.y = 0.8 + Math.sin(now / 45) * 0.2;
+    visual.orbit.visible = state.phase === 'playing' && state.time < (p.orbitUntil ?? 0);
+    visual.orbit.rotation.y = state.time * 5;
     visual.label.visible = p.id !== id;
     visual.missileMarker.visible = state.projectiles.some(projectile => projectile.kind === 'homing' && projectile.target === p.id);
     visual.missileMarker.rotation.z = now / 400;

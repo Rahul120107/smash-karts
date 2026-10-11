@@ -2,8 +2,8 @@ import { groundHeight } from '../../../shared/src/arena.js';
 import { WEAPONS } from '../../../shared/src/weapons.js';
 import type { PlayerState, Vec3, WeaponId } from '../../../shared/src/types.js';
 import type { CombatWorld } from '../simulation/world.js';
-import { wallHit } from '../collisions/projectile.js';
-import { machineGunAim } from '../../../shared/src/aim.js';
+import { terrainHit, wallHit } from '../collisions/projectile.js';
+import { clearShot, machineGunAim } from '../../../shared/src/aim.js';
 import type { Projectile } from '../../../shared/src/types.js';
 
 type Handler = (world: CombatWorld, player: PlayerState, weapon: WeaponId) => Vec3 | void;
@@ -16,10 +16,10 @@ function launch(world: CombatWorld, p: PlayerState, weapon: WeaponId): Vec3 {
   if (weapon === 'homing') {
     let best = 36;
     for (const other of world.players.values()) {
-      if (other.id === p.id || other.health <= 0) continue;
+      if (other.id === p.id || other.health <= 0 || other.invulnerableUntil > world.time) continue;
       const dx = other.x - p.x, dz = other.z - p.z, d = Math.hypot(dx, dz);
       if (d >= best || (dx * Math.sin(p.yaw) + dz * Math.cos(p.yaw)) / Math.max(d, 0.1) < -0.15) continue;
-      if (wallHit({ x: p.x, y: p.y + 0.7, z: p.z }, { x: other.x, y: other.y + 0.7, z: other.z }) !== null) continue;
+      if (!clearShot({ x: p.x, y: p.y + 0.85, z: p.z }, { x: other.x, y: other.y + 0.65, z: other.z }, w.radius)) continue;
       best = d; target = other.id;
     }
   }
@@ -44,12 +44,16 @@ function launch(world: CombatWorld, p: PlayerState, weapon: WeaponId): Vec3 {
       projectile.expires = world.time + Math.min(w.lifetime, w.aimAssist!.range / w.speed);
     }
     // Check the muzzle path so an offset cannot shoot through a thin wall.
-    const hit = wallHit({ x: p.x, y: p.y + 0.85, z: p.z }, projectile, w.radius);
+    const origin = { x: p.x, y: p.y + 0.85, z: p.z };
+    const wall = wallHit(origin, projectile, w.radius), terrain = terrainHit(origin, projectile, w.radius);
+    const hit = wall === null ? terrain : terrain === null ? wall : Math.min(wall, terrain);
     if (hit !== null) {
       projectile.x = p.x + (x - p.x) * Math.max(0, hit - 0.01);
       projectile.z = p.z + (z - p.z) * Math.max(0, hit - 0.01);
+      projectile.y = origin.y + (projectile.y - origin.y) * Math.max(0, hit - 0.01);
       if (weapon !== 'mine') projectile.expires = world.time;
     }
+    if (behind) projectile.y = groundHeight(projectile.x, projectile.z) + w.radius + 0.03;
     world.projectiles.set(projectile.id, projectile);
     if (spread === w.spread[0]) muzzle = { x: projectile.x, y: projectile.y, z: projectile.z };
   }
@@ -63,7 +67,10 @@ const boost: Handler = (world, p) => {
   p.boostUntil = world.time + WEAPONS.boost.duration;
   world.emit({ kind: 'boost', player: p.id, x: p.x, y: p.y + 0.7, z: p.z });
 };
-const handlers: Record<WeaponId, Handler> = { machineGun: launch, rocket: launch, homing: launch, mine: launch, bomb: launch, shield, boost, scatter: launch, cannon: launch };
+const orbit: Handler = (world, p) => {
+  p.orbitUntil = world.time + WEAPONS.orbit.duration;
+};
+const handlers: Record<WeaponId, Handler> = { machineGun: launch, rocket: launch, homing: launch, mine: launch, bomb: launch, shield, boost, scatter: launch, cannon: launch, bullets: launch, blastMissile: launch, orbit };
 
 export function activate(world: CombatWorld, player: PlayerState): boolean {
   const weapon = player.weapon;

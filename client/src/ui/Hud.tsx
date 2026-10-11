@@ -3,13 +3,14 @@ import { CONFIG } from '../../../shared/src/config.js';
 import { WALLS } from '../../../shared/src/arena.js';
 import { WEAPONS } from '../../../shared/src/weapons.js';
 import { drivingTelemetry } from '../../../shared/src/movement.js';
+import { ARENA_SIZE } from '../../../shared/src/arena.js';
 import type { GameEvent, Snapshot } from '../../../shared/src/types.js';
 import { WeaponIcon } from './WeaponIcon.js';
 export function clock(seconds: number) { const n = Math.max(0, Math.ceil(seconds)); return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0'); }
 export function ranked(state: Snapshot) { return [...state.players].sort((a, b) => b.score - a.score || a.deaths - b.deaths || a.name.localeCompare(b.name)); }
 function MiniMap({ state, id }: { state: Snapshot; id: string }) {
-  return <svg className="minimap" viewBox="-38 -38 76 76" aria-label="Arena minimap">
-    <rect x="-36" y="-36" width="72" height="72" rx="3" fill="#12283ee6"/>
+  return <svg className="minimap" viewBox={`${-ARENA_SIZE / 2 - 2} ${-ARENA_SIZE / 2 - 2} ${ARENA_SIZE + 4} ${ARENA_SIZE + 4}`} aria-label="Arena minimap">
+    <rect x={-ARENA_SIZE / 2} y={-ARENA_SIZE / 2} width={ARENA_SIZE} height={ARENA_SIZE} rx="3" fill="#12283ee6"/>
     {WALLS.map((w, i) => <rect key={i} x={w.x - w.width / 2} y={w.z - w.depth / 2} width={w.width} height={w.depth} fill="#5b8299"/>)}
     {state.pickups.filter(p => p.active).map(p => <rect key={p.id} data-pickup-id={p.id} x={p.x - 0.7} y={p.z - 0.7} width="1.4" height="1.4" fill="#ffd365"/>)}
     {state.players.filter(p => p.health > 0).map(p => p.id === id ? <path key={p.id} d="M0 2.3 -1.8 -1.7 0 -1 1.8 -1.7Z" fill="white" transform={'translate(' + p.x + ' ' + p.z + ') rotate(' + -p.yaw * 180 / Math.PI + ')'}/> : <circle key={p.id} cx={p.x} cy={p.z} r="1.4" fill={'#' + p.color.toString(16).padStart(6, '0')}/>)}
@@ -41,10 +42,10 @@ export function Hud({ state, id, rtt, feed, muted, onMute, onLeave }: { state: S
         <div className={'speed-readout ' + (telemetry.sliding ? 'sliding' : '')}><b>{Math.round(telemetry.speed * 3.6)}</b><span>KM/H</span>{telemetry.sliding && <strong>DRIFT</strong>}<div><i style={{ width: Math.min(100, telemetry.speed / (CONFIG.maxSpeed * CONFIG.boostMultiplier) * 100) + '%' }}/></div></div>
       </div>
       <div className={'weapon-panel ' + (weapon ? 'equipped' : '')} style={weapon ? { '--weapon-color': '#' + weapon.color.toString(16).padStart(6, '0') } as CSSProperties : undefined}>
-        <div className="weapon-icon"><WeaponIcon weapon={self.weapon}/></div><div><span className="eyebrow">{weapon ? 'READY TO FIRE · SPACE' : 'LOOK FOR THE GOLD BOXES'}</span><strong data-testid="equipped-weapon">{weapon?.label ?? 'Find a weapon'}</strong><span>{weapon?.hint ?? 'Drive through a box to collect'}</span></div>{weapon && <div className="ammo" data-testid="ammo">{self.ammo}<small>{self.weapon === 'shield' || self.weapon === 'boost' ? 'USES' : 'AMMO'}</small></div>}
+        <div className="weapon-icon"><WeaponIcon weapon={self.weapon}/></div><div><span className="eyebrow">{self.attacking ? 'ATTACK IN PROGRESS' : weapon ? 'TAP SPACE TO ACTIVATE' : 'LOOK FOR THE GOLD BOXES'}</span><strong data-testid="equipped-weapon">{weapon?.label ?? 'Find a weapon'}</strong><span>{weapon?.hint ?? 'Drive through a box to collect'}</span></div>{weapon && <div className="ammo" data-testid="ammo">{self.ammo}<small>{self.weapon === 'shield' || self.weapon === 'boost' ? 'USES' : 'AMMO'}</small></div>}
       </div>
       <MiniMap state={state} id={id}/>
     </div>
-    <div className="control-hint"><kbd>W A S D</kbd> drive <span>·</span><kbd>SPACE</kbd> fire <span>·</span><kbd>SHIFT</kbd> drift</div>
+    <div className="control-hint"><kbd>W A S D</kbd> drive <span>·</span><kbd>SPACE</kbd> tap to fire <span>·</span><kbd>SHIFT</kbd> drift</div>
   </div>;
 }

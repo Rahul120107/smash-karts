@@ -30,6 +30,21 @@ async function setup(duration = 180) {
   return { a, b, idA: welcomeA.id, idB: welcomeB.id, code: welcomeA.code };
 }
 describe('real WebSocket multiplayer integration', () => {
+  it('synchronizes a full assisted machine-gun attack after one press and immediate release', async () => {
+    const { a, b, idA, idB, code } = await setup(12); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
+    const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, target = world.players.get(idB)!;
+    Object.assign(shooter, { x: -8, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(target, { x: -7, z: 10, invulnerableUntil: 0 });
+    world.random = () => 0.5; equip(shooter, 'machineGun');
+    a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2 }] });
+    await b.state(s => s.players.find(p => p.id === idA)?.attacking === true);
+    const finished = (s: Snapshot) => s.tick > 210 && s.players.find(p => p.id === idA)?.ammo === 0;
+    const states = await Promise.all([a.state(finished), b.state(finished)]);
+    for (const state of states) expect(state.players.find(p => p.id === idA)).toMatchObject({ health: 100, score: 1, weapon: null, ammo: 0, attacking: false });
+    for (const peer of [a, b]) {
+      const fireIds = new Set(peer.messages.flatMap(m => m.type === 'snapshot' ? m.state.events.filter(e => e.kind === 'fire' && e.player === idA).map(e => e.id) : []));
+      expect(fireIds.size).toBe(30);
+    }
+  });
   it('synchronizes atomic pickup collection, ten-second respawn, and late-join states', async () => {
     const { a, b, idA, idB, code } = await setup(); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
     const world = server!.rooms.rooms.get(code)!.simulation, box = world.pickups[0]!;

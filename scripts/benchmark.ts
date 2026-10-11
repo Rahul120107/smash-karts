@@ -19,7 +19,8 @@ for (let tick = 0; tick < 180 * CONFIG.tickRate; tick++) {
       const weapon = WEAPON_IDS[(index + Math.floor(tick / 180)) % WEAPON_IDS.length]!;
       player.weapon = weapon; player.ammo = WEAPONS[weapon].ammo;
     }
-    world.enqueue(id, [{ seq: tick + 1, throttle: 1, steer: Math.sin(tick / 110 + index) * 0.8, fire: true, drift: tick % 240 < 60 }]);
+    // Alternate press/release so replacement pickups start complete server bursts.
+    world.enqueue(id, [{ seq: tick + 1, throttle: 1, steer: Math.sin(tick / 110 + index) * 0.8, fire: tick % 2 === 0, drift: tick % 240 < 60 }]);
   }
   world.step(); peakProjectiles = Math.max(peakProjectiles, world.projectiles.size);
   if (tick % 3 === 0) {

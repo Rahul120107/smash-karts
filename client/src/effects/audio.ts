@@ -52,16 +52,17 @@ export class GameAudio {
     const ctx = this.context, now = ctx.currentTime;
     if (event.kind === 'collision') { if (now - this.collisionAt < 0.12) return; this.collisionAt = now; }
     const explosive = event.kind === 'explosion' || event.kind === 'elimination';
+    const cannon = event.kind === 'fire' && event.weapon === 'cannon';
     const chime = ['pickup', 'shield', 'boost', 'respawn'].includes(event.kind);
-    const duration = explosive ? 0.4 : chime ? 0.24 : event.kind === 'fire' && event.weapon !== 'machineGun' && event.weapon !== 'scatter' ? 0.19 : 0.085;
+    const duration = cannon ? 0.38 : explosive ? 0.4 : chime ? 0.24 : event.kind === 'fire' && event.weapon !== 'machineGun' ? 0.19 : 0.085;
     const gain = ctx.createGain(); gain.connect(this.master);
-    const volume = (explosive ? 0.55 : chime ? 0.24 : 0.2) / (1 + distance / 10);
+    const volume = (cannon ? 0.5 : explosive ? 0.55 : chime ? 0.24 : 0.2) / (1 + distance / 10);
     gain.gain.setValueAtTime(0.001, now); gain.gain.linearRampToValueAtTime(volume, now + 0.005); gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-    const oscillator = ctx.createOscillator(); oscillator.connect(gain); oscillator.type = chime ? 'sine' : explosive ? 'triangle' : 'square';
-    oscillator.frequency.setValueAtTime(chime ? 480 : explosive ? 90 : event.kind === 'fire' ? 220 : 115, now);
+    const oscillator = ctx.createOscillator(); oscillator.connect(gain); oscillator.type = chime ? 'sine' : explosive || cannon ? 'triangle' : 'square';
+    oscillator.frequency.setValueAtTime(cannon ? 72 : chime ? 480 : explosive ? 90 : event.kind === 'fire' ? 220 : 115, now);
     oscillator.frequency.exponentialRampToValueAtTime(chime ? 1250 : 35, now + duration);
     let noise: AudioBufferSourceNode | null = null, filter: BiquadFilterNode | null = null;
-    if ((explosive || event.kind === 'collision' || event.kind === 'impact') && this.noise) {
+    if ((cannon || explosive || event.kind === 'collision' || event.kind === 'impact') && this.noise) {
       noise = ctx.createBufferSource(); noise.buffer = this.noise; filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = explosive ? 650 : 1200;
       noise.connect(filter); filter.connect(gain); noise.start(); noise.stop(now + duration);
     }

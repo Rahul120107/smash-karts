@@ -31,11 +31,11 @@ function launch(world: CombatWorld, p: PlayerState, weapon: WeaponId): Vec3 {
     const offset = behind ? -1.8 : 1.35;
     const x = p.x + fx * offset, z = p.z + fz * offset;
     const projectile: Projectile = {
-      id: world.nextProjectileId(), kind: w.kind!, owner: p.id, x, z,
+      id: world.nextProjectileId(), kind: w.kind!, owner: p.id, weapon, x, z,
       y: behind ? groundHeight(x, z) + w.radius + 0.03 : p.y + 0.85,
       vx: fx * w.speed + (weapon === 'bomb' ? p.vx * 0.45 : 0),
       vz: fz * w.speed + (weapon === 'bomb' ? p.vz * 0.45 : 0),
-      vy: weapon === 'bomb' ? 9 : Math.sin(pitch) * w.speed, radius: w.radius, damage: w.damage, blast: w.blast,
+      vy: w.launchVelocityY ?? Math.sin(pitch) * w.speed, radius: w.radius, damage: w.damage, blast: w.blast,
       expires: world.time + w.lifetime, armedAt: world.time + (behind ? 0.7 : 0), target,
     };
     if (assisted) {
@@ -63,7 +63,7 @@ const boost: Handler = (world, p) => {
   p.boostUntil = world.time + WEAPONS.boost.duration;
   world.emit({ kind: 'boost', player: p.id, x: p.x, y: p.y + 0.7, z: p.z });
 };
-const handlers: Record<WeaponId, Handler> = { machineGun: launch, rocket: launch, homing: launch, mine: launch, bomb: launch, shield, boost, scatter: launch };
+const handlers: Record<WeaponId, Handler> = { machineGun: launch, rocket: launch, homing: launch, mine: launch, bomb: launch, shield, boost, scatter: launch, cannon: launch };
 
 export function activate(world: CombatWorld, player: PlayerState): boolean {
   const weapon = player.weapon;

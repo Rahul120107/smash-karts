@@ -4,11 +4,20 @@ import { Particles } from '../client/src/effects/particles.js';
 import { drivingSoundProfile } from '../client/src/effects/driving-audio.js';
 import { batchStatic } from '../client/src/game/batch.js';
 import { updatePickupVisual } from '../client/src/weapons/pickup-visual.js';
+import { createProjectile } from '../client/src/weapons/visuals.js';
 import type { GameEvent } from '../shared/src/types.js';
 const kart = { x: -8, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0 };
 const event: GameEvent = { id: 1, at: 0, kind: 'explosion', player: 'a', x: -8, y: 0.8, z: 0, radius: 4 };
 
 describe('bounded rendering and driving audio', () => {
+  it('gives the cannon a large spherical model and persistent launch smoke', () => {
+    const ball = createProjectile('cannonball'), bullet = createProjectile('bullet');
+    const ballSize = new THREE.Box3().setFromObject(ball).getSize(new THREE.Vector3()), bulletSize = new THREE.Box3().setFromObject(bullet).getSize(new THREE.Vector3());
+    expect(ballSize.x).toBeGreaterThan(bulletSize.x * 3); expect(ballSize.y).toBeCloseTo(ballSize.x, 1);
+    const particles = new Particles(new THREE.Scene()); particles.emit({ ...event, kind: 'fire', weapon: 'cannon' }); particles.update(0.01);
+    expect(particles.counts.particles).toBe(22); particles.update(0.12); expect(particles.counts.particles).toBe(14);
+    particles.dispose(); for (const model of [ball, bullet]) model.traverse(object => { if (object instanceof THREE.Mesh) { object.geometry.dispose(); for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.dispose(); } });
+  });
   it('hides collected boxes immediately and never predicts a respawn from a local clock', () => {
     const visual = new THREE.Group(), halo = new THREE.Group(); halo.name = 'pickup-halo'; visual.add(halo);
     const box = { id: 0, x: -8, y: 0, z: 18, active: false, availableAt: 10 };

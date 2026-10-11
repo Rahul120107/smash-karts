@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG, DT } from '../shared/src/config.js';
-import { groundHeight } from '../shared/src/arena.js';
+import { ARENA_SIZE, groundHeight } from '../shared/src/arena.js';
 import { collideKarts, moveKart, NEUTRAL, resolveWalls } from '../shared/src/movement.js';
 import { segmentBox, segmentSphere } from '../shared/src/math.js';
 const kart = () => ({ x: -8, y: 0, z: -20, yaw: 0, vx: 0, vy: 0, vz: 0 });
@@ -21,8 +21,8 @@ describe('shared kart dynamics', () => {
     expect(sliding.yaw).toBeGreaterThan(normal.yaw); expect(sliding.x).toBeGreaterThan(normal.x);
   });
   it('prevents wall penetration, including centers inside an obstacle', () => {
-    const k = { ...kart(), x: 34.8, z: 25, vx: 20 }; resolveWalls(k);
-    expect(k.x).toBeLessThanOrEqual(35 - CONFIG.kartRadius);
+    const k = { ...kart(), x: ARENA_SIZE / 2 - 1.2, z: 25, vx: 20 }; resolveWalls(k);
+    expect(k.x).toBeLessThanOrEqual(ARENA_SIZE / 2 - 1 - CONFIG.kartRadius);
     expect(k.vx).toBeLessThanOrEqual(0);
     const inside = { ...kart(), x: 0, z: 0 }; resolveWalls(inside);
     expect(Math.max(Math.abs(inside.x), Math.abs(inside.z))).toBeGreaterThanOrEqual(2.5 + CONFIG.kartRadius);

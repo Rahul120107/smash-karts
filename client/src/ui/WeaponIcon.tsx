@@ -9,6 +9,7 @@ export function WeaponIcon({ weapon }: { weapon: WeaponId | null }) {
     shield: <><path d="M20 3 34 8v12c0 8-14 16-14 16S6 28 6 20V8Z"/><path d="m13 20 5 5 10-12"/></>,
     boost: <><path d="m24 3-16 20h11l-3 14 17-22H22Z"/></>,
     scatter: <><path d="M4 16h15v9H4zM19 19h6M11 25l-2 10h6l3-10M28 19h8M26 11l7-5M26 27l7 5"/></>,
+    cannon: <><path d="m6 17 25-5 3 10-25 5Z M15 26l-3 6h16l-3-8M29 13l3 10"/><circle cx="11" cy="32" r="5"/><circle cx="27" cy="32" r="5"/><circle cx="36" cy="8" r="2"/></>,
   };
   return <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{weapon ? paths[weapon] : <><path d="M13 13a7 7 0 1 1 12 5c-4 2-5 3-5 7"/><circle cx="20" cy="32" r="1"/></>}</svg>;
 }

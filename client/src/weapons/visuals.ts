@@ -3,17 +3,23 @@ import { batchStatic } from '../game/batch.js';
 import type { ProjectileKind } from '../../../shared/src/types.js';
 export function createProjectile(kind: ProjectileKind): THREE.Group {
   const group = new THREE.Group();
-  const colors: Record<ProjectileKind, number> = { bullet: 0xfff38d, pellet: 0xffcf71, rocket: 0xff7948, homing: 0xdf8eff, mine: 0xff5268, bomb: 0x24313c };
+  const colors: Record<ProjectileKind, number> = { bullet: 0xfff38d, pellet: 0xffcf71, cannonball: 0x354455, rocket: 0xff7948, homing: 0xdf8eff, mine: 0xff5268, bomb: 0x24313c };
   const material = kind === 'bullet' ? new THREE.MeshBasicMaterial({ color: 0xfff2ae }) : new THREE.MeshStandardMaterial({ color: colors[kind], emissive: colors[kind], emissiveIntensity: kind === 'bomb' ? 0 : 0.6 });
-  if (kind === 'rocket' || kind === 'homing') {
+  if (kind === 'cannonball') {
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.44, 14, 10), new THREE.MeshStandardMaterial({ color: 0x354455, metalness: 0.72, roughness: 0.36 })); ball.castShadow = true; group.add(ball);
+    const seam = new THREE.Mesh(new THREE.TorusGeometry(0.435, 0.016, 4, 14), new THREE.MeshStandardMaterial({ color: 0x667482, metalness: 0.6, roughness: 0.5 })); group.add(seam);
+  } else if (kind === 'rocket' || kind === 'homing') {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.8, 8), material); body.rotation.x = Math.PI / 2; group.add(body);
     const nose = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 8), material); nose.rotation.x = Math.PI / 2; nose.position.z = 0.5; group.add(nose);
     const trail = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.9, 8), new THREE.MeshBasicMaterial({ color: 0xffd17d, transparent: true, opacity: 0.7 })); trail.rotation.x = -Math.PI / 2; trail.position.z = -0.7; group.add(trail);
+    if (kind === 'homing') for (let i = 0; i < 3; i++) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.04, 0.25), material); fin.rotation.z = i * Math.PI / 3; fin.position.z = -0.2; group.add(fin);
+    }
   } else if (kind === 'mine') {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.65, 0.22, 12), material); group.add(body);
     const light = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffedf0 })); light.position.y = 0.2; group.add(light);
   } else {
-    const radius = kind === 'bomb' ? 0.4 : kind === 'pellet' ? 0.17 : 0.1;
+    const radius = kind === 'bomb' ? 0.48 : kind === 'pellet' ? 0.17 : 0.1;
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 6), material); if (kind === 'bullet') mesh.scale.set(0.65, 0.65, 6); group.add(mesh);
     if (kind === 'bomb') { const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.3, 5), new THREE.MeshBasicMaterial({ color: 0xffc04f })); fuse.position.y = 0.45; group.add(fuse); }
   }

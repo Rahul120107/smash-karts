@@ -1,21 +1,23 @@
-export type WeaponId = 'machineGun' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'shield' | 'boost' | 'scatter';
-export type ProjectileKind = 'bullet' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'pellet';
+export type WeaponId = 'machineGun' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'shield' | 'boost' | 'scatter' | 'cannon';
+export type ProjectileKind = 'bullet' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'pellet' | 'cannonball';
 export interface Vec3 { x: number; y: number; z: number }
 export interface Input { seq: number; throttle: number; steer: number; fire: boolean; drift: boolean }
-export interface KartState extends Vec3 { yaw: number; vx: number; vz: number; vy: number }
+export interface KartState extends Vec3 { yaw: number; vx: number; vz: number; vy: number; yawRate?: number }
 export interface PlayerState extends KartState {
   id: string; name: string; color: number; health: number; score: number; deaths: number;
   weapon: WeaponId | null; ammo: number; nextFire: number; shieldUntil: number; boostUntil: number;
   invulnerableUntil: number; respawnAt: number; ack: number;
   aimTarget?: string | null;
+  attacking?: boolean;
 }
 export interface Projectile extends Vec3 {
   id: number; kind: ProjectileKind; owner: string; vx: number; vy: number; vz: number;
   radius: number; damage: number; blast: number; expires: number; armedAt: number; target: string | null;
   maxRange?: number; travelled?: number; origin?: Vec3;
+  weapon?: WeaponId;
 }
 export interface Pickup extends Vec3 { id: number; active: boolean; availableAt: number }
-export type EffectKind = 'fire' | 'explosion' | 'hit' | 'pickup' | 'pickupSpawn' | 'shield' | 'boost' | 'elimination' | 'impact' | 'collision' | 'respawn';
+export type EffectKind = 'fire' | 'explosion' | 'hit' | 'pickup' | 'pickupSpawn' | 'shield' | 'shieldImpact' | 'boost' | 'elimination' | 'impact' | 'collision' | 'respawn';
 export interface GameEvent extends Vec3 { id: number; kind: EffectKind; at: number; player: string; weapon?: WeaponId; radius?: number; target?: string; pickupId?: number }
 export interface Snapshot {
   code: string; host: string; phase: 'lobby' | 'playing' | 'finished'; tick: number; time: number;

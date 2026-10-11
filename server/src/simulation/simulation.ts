@@ -2,17 +2,18 @@ import { COLORS, CONFIG, DT } from '../../../shared/src/config.js';
 import { groundHeight, PICKUP_POSITIONS, SPAWNS } from '../../../shared/src/arena.js';
 import { collideKarts, moveKart, NEUTRAL } from '../../../shared/src/movement.js';
 import type { GameEvent, Input, Pickup, PlayerState, Projectile, Snapshot } from '../../../shared/src/types.js';
-import { activate } from '../weapons/activate.js';
+import { AttackSequences } from '../weapons/sequences.js';
 import { stepProjectiles } from '../weapons/projectiles.js';
 import { collectPickups } from './pickups.js';
 import type { CombatWorld } from './world.js';
 import { machineGunAim } from '../../../shared/src/aim.js';
 
-interface Controls { queue: Input[]; last: Input; lastReceived: number; highest: number }
+interface Controls { queue: Input[]; last: Input; lastReceived: number; highest: number; fireDown: boolean; pressed: boolean }
 export class Simulation implements CombatWorld {
   time = 0; tick = 0; phase: Snapshot['phase'] = 'lobby';
   players = new Map<string, PlayerState>(); projectiles = new Map<number, Projectile>();
   pickups: Pickup[] = []; events: GameEvent[] = [];
+  readonly attacks = new AttackSequences();
   private projectileId = 0; private eventId = 0; private controls = new Map<string, Controls>();
   constructor(public duration: number = CONFIG.matchDuration, public random: () => number = Math.random) { this.resetPickups(); }
   nextProjectileId() { return ++this.projectileId; }
@@ -21,10 +22,10 @@ export class Simulation implements CombatWorld {
   addPlayer(id: string, name: string): PlayerState {
     const p: PlayerState = { id, name, color: COLORS[this.players.size % COLORS.length]!, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0,
       health: CONFIG.maxHealth, score: 0, deaths: 0, weapon: null, ammo: 0, nextFire: 0, shieldUntil: 0, boostUntil: 0, invulnerableUntil: 0, respawnAt: 0, ack: 0 };
-    this.players.set(id, p); this.controls.set(id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0 });
+    this.players.set(id, p); this.controls.set(id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0, fireDown: false, pressed: false });
     this.spawn(p, this.phase === 'playing' ? undefined : this.players.size - 1); return p;
   }
-  removePlayer(id: string) { this.players.delete(id); this.controls.delete(id); for (const [key, p] of this.projectiles) if (p.owner === id) this.projectiles.delete(key); }
+  removePlayer(id: string) { const player = this.players.get(id); if (player) this.attacks.cancel(player); this.players.delete(id); this.controls.delete(id); for (const [key, p] of this.projectiles) if (p.owner === id) this.projectiles.delete(key); }
   private spawn(p: PlayerState, preferred?: number) {
     const alive = [...this.players.values()].filter(k => k.id !== p.id && k.health > 0);
     const spawn = preferred !== undefined ? SPAWNS[preferred % SPAWNS.length]! : [...SPAWNS].sort((a, b) => {
@@ -32,15 +33,16 @@ export class Simulation implements CombatWorld {
       return nearest(b) - nearest(a);
     })[0]!;
     Object.assign(p, spawn, { y: groundHeight(spawn.x, spawn.z), vx: 0, vy: 0, vz: 0, health: CONFIG.maxHealth, respawnAt: 0,
-      weapon: null, ammo: 0, nextFire: 0, invulnerableUntil: this.time + CONFIG.spawnProtection, shieldUntil: 0, boostUntil: 0, aimTarget: null });
+      weapon: null, ammo: 0, nextFire: 0, invulnerableUntil: this.time + CONFIG.spawnProtection, shieldUntil: 0, boostUntil: 0, aimTarget: null, attacking: false, yawRate: 0 });
+    this.attacks.cancel(p);
     const c = this.controls.get(p.id)!; c.queue = []; c.last = { ...NEUTRAL }; c.lastReceived = -1;
   }
   start() {
-    this.phase = 'playing'; this.time = 0; this.tick = 0; this.projectiles.clear(); this.events = []; this.resetPickups();
+    this.phase = 'playing'; this.time = 0; this.tick = 0; this.projectiles.clear(); this.attacks.clear(); this.events = []; this.resetPickups();
     let index = 0;
     for (const p of this.players.values()) {
       p.score = 0; p.deaths = 0; p.ack = 0;
-      this.controls.set(p.id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0 });
+      this.controls.set(p.id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0, fireDown: false, pressed: false });
       this.spawn(p, index++);
     }
   }
@@ -57,13 +59,14 @@ export class Simulation implements CombatWorld {
   step() {
     if (this.phase !== 'playing') return;
     this.tick++; this.time = this.tick * DT;
-    if (this.time + 1e-9 >= this.duration) { this.time = this.duration; this.phase = 'finished'; this.projectiles.clear(); return; }
+    if (this.time + 1e-9 >= this.duration) { this.time = this.duration; this.phase = 'finished'; this.projectiles.clear(); this.attacks.clear(); for (const p of this.players.values()) p.attacking = false; return; }
     for (const p of this.players.values()) {
       const c = this.controls.get(p.id)!;
       const command = c.queue.shift();
-      if (command) { c.last = command; p.ack = command.seq; }
+      c.pressed = false;
+      if (command) { c.pressed = command.fire && !c.fireDown; c.fireDown = command.fire; c.last = command; p.ack = command.seq; }
       const input = this.time - c.lastReceived <= CONFIG.inputTimeout ? c.last : NEUTRAL;
-      if (p.health <= 0) { if (this.time >= p.respawnAt) { this.spawn(p); this.emit({ kind: 'respawn', player: p.id, x: p.x, y: p.y + 0.3, z: p.z }); } continue; }
+      if (p.health <= 0) { this.attacks.cancel(p); if (this.time >= p.respawnAt) { this.spawn(p); this.emit({ kind: 'respawn', player: p.id, x: p.x, y: p.y + 0.3, z: p.z }); } continue; }
       const wallImpact = moveKart(p, input, this.time < p.boostUntil);
       if (wallImpact > 4) this.emit({ kind: 'collision', player: p.id, x: p.x, y: p.y + 0.4, z: p.z, radius: wallImpact });
     }
@@ -76,7 +79,8 @@ export class Simulation implements CombatWorld {
     for (const p of alive) {
       p.aimTarget = p.weapon === 'machineGun' ? machineGunAim(p, alive, this.time).target?.id ?? null : null;
       const c = this.controls.get(p.id)!;
-      if (this.time - c.lastReceived <= CONFIG.inputTimeout && c.last.fire) activate(this, p);
+      if (this.time - c.lastReceived <= CONFIG.inputTimeout && c.pressed) this.attacks.begin(this, p);
+      this.attacks.step(this, p);
     }
     stepProjectiles(this); collectPickups(this);
     this.events = this.events.filter(e => this.time - e.at < 0.75).slice(-256);

@@ -58,9 +58,9 @@ export class ArenaGame {
     const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffedbe, fog: false })); sunDisc.position.set(-70, 82, 58); this.scene.add(sunDisc);
     this.scene.add(new THREE.HemisphereLight(0xedf7ff, 0x777153, 2.1));
     const sun = new THREE.DirectionalLight(0xfff0d3, 2.3); sun.position.set(-25, 50, 20); sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024); sun.shadow.camera.left = -45; sun.shadow.camera.right = 45; sun.shadow.camera.top = 45; sun.shadow.camera.bottom = -45; sun.shadow.camera.far = 110; sun.shadow.bias = -0.001; this.scene.add(sun);
+    sun.shadow.mapSize.set(1024, 1024); sun.shadow.camera.left = -62; sun.shadow.camera.right = 62; sun.shadow.camera.top = 62; sun.shadow.camera.bottom = -62; sun.shadow.camera.far = 150; sun.shadow.bias = -0.001; this.scene.add(sun);
     this.scene.add(buildArena()); this.particles = new Particles(this.scene);
-    this.camera.position.set(48, 48, 50); this.camera.lookAt(0, 0, 0);
+    this.camera.position.set(70, 65, 72); this.camera.lookAt(0, 0, 0);
     this.resize = new ResizeObserver(() => this.updateSize()); this.resize.observe(container); this.updateSize();
     this.unsubscribe = connection.onSnapshot(s => this.receive(s));
     if (connection.state.snapshot) this.receive(connection.state.snapshot);
@@ -140,11 +140,15 @@ export class ArenaGame {
         visual.position.set(p.x + p.vx * extrapolation, p.y + p.vy * extrapolation, p.z + p.vz * extrapolation);
         if (p.kind !== 'mine' && p.kind !== 'bomb') visual.lookAt(visual.position.x + p.vx, visual.position.y + p.vy, visual.position.z + p.vz);
         if (p.kind === 'mine') visual.scale.setScalar(state.time >= p.armedAt ? 1 + Math.sin(now / 100) * 0.06 : 0.85);
+        if (p.kind === 'bomb') {
+          const fuse = Math.max(0, Math.min(1, (p.expires - state.time) / 1.6));
+          visual.scale.setScalar(1 + Math.sin(now / (35 + fuse * 100)) * 0.06 * (1 - fuse));
+        }
         this.particles.trail({ ...p, x: visual.position.x, y: visual.position.y, z: visual.position.z }, delta);
       }
     }
     if (playing && self) this.followCamera(self, delta);
-    else { this.camera.position.set(48, 48, 50); this.camera.lookAt(0, 0, 0); this.cameraReady = false; }
+    else { this.camera.position.set(70, 65, 72); this.camera.lookAt(0, 0, 0); this.cameraReady = false; }
     this.audio.update(self, this.prediction.kart, !!playing, delta);
     this.particles.update(delta);
     if (playing && !document.hidden && now - this.lastShadow >= 1000 / 20) { this.renderer.shadowMap.needsUpdate = true; this.lastShadow = now; }
@@ -176,9 +180,12 @@ export class ArenaGame {
     visual.group.visible = p.health > 0;
     visual.shield.visible = state.phase === 'playing' && (state.time < p.shieldUntil || state.time < p.invulnerableUntil);
     visual.shield.rotation.y += dt * 0.7;
-    (visual.shield.material as THREE.MeshBasicMaterial).opacity = 0.12 + Math.sin(now / 240) * 0.035;
+    const shieldHit = state.events.some(e => e.kind === 'shieldImpact' && e.target === p.id && state.time - e.at < 0.18);
+    (visual.shield.material as THREE.MeshBasicMaterial).opacity = shieldHit ? 0.38 : 0.12 + Math.sin(now / 240) * 0.035;
     visual.boost.visible = state.time < p.boostUntil; visual.boost.scale.y = 0.8 + Math.sin(now / 45) * 0.2;
     visual.label.visible = p.id !== id;
+    visual.missileMarker.visible = state.projectiles.some(projectile => projectile.kind === 'homing' && projectile.target === p.id);
+    visual.missileMarker.rotation.z = now / 400;
     const telemetry = drivingTelemetry(position);
     if (p.id === id) { this.container.dataset.kartY = String(visual.group.position.y); this.container.dataset.predictionY = String(position.y); }
     if (telemetry.grounded) visual.group.position.y = Math.max(groundHeight(visual.group.position.x, visual.group.position.z), visual.group.position.y);
@@ -186,11 +193,23 @@ export class ArenaGame {
     visual.contact.position.y = groundHeight(visual.group.position.x, visual.group.position.z) - visual.group.position.y + 0.025;
     (visual.contact.material as THREE.MeshBasicMaterial).opacity = 0.22 / (1 + Math.max(0, -visual.contact.position.y) * 2);
     for (const wheel of visual.wheels) wheel.rotation.x += telemetry.forward * dt * 3;
-    for (const pivot of visual.steering) pivot.rotation.y = Math.max(-0.32, Math.min(0.32, angleDelta(visual.group.rotation.y, Math.atan2(position.vx, position.vz)))) * Math.min(1, telemetry.speed / 5);
+    const wheelAngle = Math.atan((position.yawRate ?? 0) * CONFIG.wheelbase / (Math.abs(telemetry.forward) > 0.2 ? telemetry.forward : 0.2));
+    for (const pivot of visual.steering) pivot.rotation.y += (Math.max(-0.5, Math.min(0.5, wheelAngle)) - pivot.rotation.y) * (1 - Math.exp(-12 * dt));
+    const fx = Math.sin(position.yaw), fz = Math.cos(position.yaw);
+    const slope = telemetry.grounded ? -Math.atan2(groundHeight(position.x + fx * 0.8, position.z + fz * 0.8) - groundHeight(position.x - fx * 0.8, position.z - fz * 0.8), 1.6) : 0;
+    visual.chassis.rotation.x += (Math.max(-0.35, Math.min(0.35, slope)) - visual.chassis.rotation.x) * (1 - Math.exp(-12 * dt));
+    for (const wheel of visual.wheels) {
+      const pivot = wheel.parent!;
+      const contact = groundHeight(position.x + Math.cos(position.yaw) * pivot.position.x + fx * pivot.position.z, position.z - fx * pivot.position.x + fz * pivot.position.z);
+      pivot.position.y = 0.33 + (telemetry.grounded ? Math.max(-0.28, Math.min(0.28, contact - position.y)) : 0);
+    }
     visual.chassis.rotation.z += (Math.max(-0.06, Math.min(0.06, -telemetry.lateral * 0.008)) - visual.chassis.rotation.z) * (1 - Math.exp(-10 * dt));
     const aimTarget = state.players.find(other => other.id === p.aimTarget);
     const turretYaw = aimTarget ? angleDelta(position.yaw, Math.atan2(aimTarget.x - position.x, aimTarget.z - position.z)) : 0;
     visual.turret.rotation.y += (Math.max(-0.38, Math.min(0.38, turretYaw)) - visual.turret.rotation.y) * (1 - Math.exp(-18 * dt));
+    visual.cannon.visible = p.weapon === 'cannon' || state.events.some(e => e.kind === 'fire' && e.player === p.id && e.weapon === 'cannon' && state.time - e.at < 0.6);
+    visual.turret.visible = !visual.cannon.visible;
+    if (state.time < p.boostUntil && state.phase === 'playing') this.particles.boost(position, dt);
     if (p.health > 0 && state.phase === 'playing') this.particles.drive(position, p.id, dt);
   }
   private followCamera(self: PlayerState, dt: number) {

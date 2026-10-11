@@ -1,5 +1,5 @@
 import { CONFIG, DT } from './config.js';
-import { ARENA_SIZE, groundHeight, RAMPS, WALLS } from './arena.js';
+import { ARENA_SIZE, groundHeight, rampHeight, RAMPS, WALLS } from './arena.js';
 import { clamp } from './math.js';
 import type { Input, KartState } from './types.js';
 export const NEUTRAL: Input = { seq: 0, throttle: 0, steer: 0, fire: false, drift: false };
@@ -22,19 +22,25 @@ function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number)
   let forward = k.vx * fx + k.vz * fz;
   let lateral = k.vx * fz - k.vz * fx;
   const acceleration = input.throttle < 0 ? (forward > 0.5 ? CONFIG.braking : CONFIG.reverseAcceleration) : CONFIG.acceleration;
-  forward += input.throttle * acceleration * dt;
+  const traction = grounded ? 1 : CONFIG.airControl;
+  forward += input.throttle * acceleration * traction * dt;
   forward *= Math.exp(-(input.throttle === 0 ? 1.6 : 0.45) * dt);
   const maximum = CONFIG.maxSpeed * (boosted ? CONFIG.boostMultiplier : 1);
   forward = clamp(forward, -CONFIG.reverseSpeed, maximum);
-  lateral *= Math.exp(-(input.drift ? 2.2 : 10) * dt);
-  const turn = CONFIG.steering * clamp(Math.abs(forward) / 6, 0, 1) / (1 + Math.abs(forward) / 48);
-  const angularVelocity = clamp(input.steer * turn * Math.sign(forward) * (input.drift ? 1.18 : 1), -CONFIG.maxYawRate, CONFIG.maxYawRate);
-  k.yaw += angularVelocity * dt;
+  const drifting = input.drift && grounded && Math.abs(forward) > 5;
+  lateral *= Math.exp(-(drifting ? CONFIG.driftGrip : CONFIG.roadGrip) * traction * dt);
+  // Bicycle-model turn radius shrinks at low speed; steering response/inertia
+  // and reduced high-speed wheel angle prevent instant changes in heading.
+  const speedMix = clamp(Math.abs(forward) / CONFIG.maxSpeed, 0, 1);
+  const wheelAngle = input.steer * (CONFIG.lowSpeedSteerAngle + (CONFIG.highSpeedSteerAngle - CONFIG.lowSpeedSteerAngle) * speedMix);
+  const targetYawRate = clamp(forward / CONFIG.wheelbase * Math.tan(wheelAngle) * (drifting ? 1.24 : 1) * traction, -CONFIG.maxYawRate, CONFIG.maxYawRate);
+  k.yawRate = (k.yawRate ?? 0) + (targetYawRate - (k.yawRate ?? 0)) * (1 - Math.exp(-CONFIG.steeringResponse * dt));
+  k.yaw += k.yawRate * dt;
   k.yaw = Math.atan2(Math.sin(k.yaw), Math.cos(k.yaw));
   // Retain a fraction of world momentum for controlled slides; normal driving grips strongly.
   const nx = Math.sin(k.yaw), nz = Math.cos(k.yaw);
   const targetX = nx * forward + nz * lateral, targetZ = nz * forward - nx * lateral;
-  const grip = 1 - Math.exp(-(input.drift ? 4 : 24) * dt);
+  const grip = 1 - Math.exp(-(drifting ? CONFIG.driftTurnGrip : CONFIG.turnGrip) * traction * dt);
   k.vx = fx * forward + fz * lateral; k.vz = fz * forward - fx * lateral;
   k.vx += (targetX - k.vx) * grip; k.vz += (targetZ - k.vz) * grip;
   limitHorizontalVelocity(k);
@@ -74,7 +80,7 @@ export function resolveRampSides(k: KartState) {
   for (const r of RAMPS) {
     const dz = Math.abs(k.z - r.z);
     if (dz >= r.depth / 2) continue;
-    const height = r.height * (1 - dz / (r.depth / 2));
+    const height = rampHeight(r, k.z);
     if (k.y + CONFIG.maxStepHeight >= height || Math.abs(k.x - r.x) >= r.width / 2 + CONFIG.kartRadius) continue;
     const normal = k.x < r.x ? -1 : 1;
     k.x = r.x + normal * (r.width / 2 + CONFIG.kartRadius);
@@ -88,6 +94,7 @@ export function recoverKart(k: KartState) {
   if (!Number.isFinite(k.x)) k.x = -8;
   if (!Number.isFinite(k.z)) k.z = 18;
   if (!Number.isFinite(k.yaw)) k.yaw = 0;
+  k.yawRate = Number.isFinite(k.yawRate) ? clamp(k.yawRate!, -CONFIG.maxYawRate, CONFIG.maxYawRate) : 0;
   for (const axis of ['x', 'z'] as const) {
     const velocity = axis === 'x' ? 'vx' : 'vz';
     if (Math.abs(k[axis]) > boundary) { k[axis] = clamp(k[axis], -boundary, boundary); if (k[axis] * k[velocity] > 0) k[velocity] = 0; }
@@ -136,7 +143,12 @@ export function collideKarts(a: KartState, b: KartState): number {
   const push = (minimum - d) / 2;
   a.x -= dx * push; a.z -= dz * push; b.x += dx * push; b.z += dz * push;
   const closing = (a.vx - b.vx) * dx + (a.vz - b.vz) * dz;
-  if (closing > 0) { const impulse = closing * (1 + CONFIG.kartRestitution) / 2; a.vx -= dx * impulse; a.vz -= dz * impulse; b.vx += dx * impulse; b.vz += dz * impulse; }
+  if (closing > 0) {
+    const inverseMass = 1 / CONFIG.kartMass;
+    const impulse = closing * (1 + CONFIG.kartRestitution) / (2 * inverseMass);
+    a.vx -= dx * impulse * inverseMass; a.vz -= dz * impulse * inverseMass;
+    b.vx += dx * impulse * inverseMass; b.vz += dz * impulse * inverseMass;
+  }
   resolveWalls(a); resolveWalls(b);
   resolveRampSides(a); resolveRampSides(b);
   for (const [k, grounded] of [[a, groundedA], [b, groundedB]] as const) {

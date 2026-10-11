@@ -5,7 +5,11 @@ import type { CombatWorld } from '../simulation/world.js';
 import { wallHit } from '../collisions/projectile.js';
 
 export function damage(world: CombatWorld, target: PlayerState, amount: number, attacker: string): void {
-  if (target.health <= 0 || world.time < target.invulnerableUntil || world.time < target.shieldUntil) return;
+  // Owner attribution survives delayed fuses and splash; no weapon can hurt its originator.
+  if (target.id === attacker || target.health <= 0 || world.time < target.invulnerableUntil) return;
+  if (world.time < target.shieldUntil) {
+    world.emit({ kind: 'shieldImpact', player: attacker, target: target.id, x: target.x, y: target.y + 0.7, z: target.z }); return;
+  }
   target.health = Math.max(0, target.health - amount);
   world.emit({ kind: 'hit', player: attacker, target: target.id, x: target.x, y: target.y + 0.7, z: target.z });
   if (target.health > 0) return;
@@ -19,11 +23,11 @@ export function damage(world: CombatWorld, target: PlayerState, amount: number, 
 }
 
 export function explode(world: CombatWorld, projectile: Projectile): void {
-  world.emit({ kind: 'explosion', player: projectile.owner, x: projectile.x, y: projectile.y, z: projectile.z, radius: projectile.blast });
+  world.emit({ kind: 'explosion', player: projectile.owner, weapon: projectile.weapon, x: projectile.x, y: projectile.y, z: projectile.z, radius: projectile.blast });
   for (const target of world.players.values()) {
     const center = { x: target.x, y: target.y + 0.65, z: target.z };
     const d = distance(projectile, center);
-    if (d > projectile.blast || target.health <= 0) continue;
+    if (target.id === projectile.owner || d > projectile.blast || target.health <= 0) continue;
     // Tiny upward offset keeps ground-level mines from treating the floor as an occluder.
     const obstruction = wallHit({ x: projectile.x, y: Math.max(projectile.y, 0.3), z: projectile.z }, center);
     if (obstruction !== null && obstruction > 0.01 && obstruction < 0.99) continue;

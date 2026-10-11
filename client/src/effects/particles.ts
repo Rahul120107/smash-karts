@@ -34,14 +34,22 @@ export class Particles {
     }
     if (event.kind === 'fire' && (event.weapon === 'shield' || event.weapon === 'boost' || event.weapon === 'mine')) return;
     const explosive = event.kind === 'explosion' || event.kind === 'elimination';
-    const color = explosive ? 0xffad4c : event.kind === 'respawn' || event.kind === 'shield' ? 0x68ddff : event.kind === 'pickup' ? 0xffd963 : event.kind === 'boost' ? 0x64ffcf : 0xfff1b5;
-    const fire = event.kind === 'fire', count = explosive ? 22 : fire ? 4 : event.kind === 'collision' ? 5 : 12;
+    const cannon = event.weapon === 'cannon';
+    const color = explosive ? cannon ? 0xffd29a : 0xffad4c : event.kind === 'respawn' || event.kind === 'shield' || event.kind === 'shieldImpact' ? 0x68ddff : event.kind === 'pickup' ? 0xffd963 : event.kind === 'boost' ? 0x64ffcf : 0xfff1b5;
+    const fire = event.kind === 'fire', count = explosive ? 22 : fire ? cannon ? 8 : 4 : event.kind === 'collision' ? 5 : 12;
     for (let i = 0; i < count; i++) this.add(event, color, explosive ? 0.16 + Math.random() * 0.25 : fire ? 0.1 : 0.065, explosive ? 0.65 : fire ? 0.09 : 0.4, explosive ? 12 : fire ? 2 : 5);
     if (explosive) for (let i = 0; i < 10; i++) this.add(event, 0x75808b, 0.18, 0.85, 4, -1.2, 1.8);
+    if (cannon && fire) for (let i = 0; i < 14; i++) this.add(event, 0xb8b4a9, 0.2, 0.7, 2.5, -1, 2);
+    if (cannon && explosive) for (let i = 0; i < 8; i++) this.add(event, 0x374657, 0.14, 0.8, 11, 18);
     if (explosive || event.kind === 'respawn' || event.kind === 'pickup' || event.kind === 'shield') {
       const ring = this.rings[this.ringIndex++ % this.rings.length]!;
       Object.assign(ring, { x: event.x, y: groundHeight(event.x, event.z) + 0.05, z: event.z, life: 0.65, size: explosive ? event.radius ?? 3 : 2.5 }); ring.color.setHex(color);
     }
+  }
+  boost(kart: KartState, dt: number) {
+    if (Math.random() > Math.min(1, dt * 24)) return;
+    const fx = Math.sin(kart.yaw), fz = Math.cos(kart.yaw);
+    for (const side of [-0.45, 0.45]) this.add({ x: kart.x - fx * 1.6 + fz * side, y: kart.y + 0.4, z: kart.z - fz * 1.6 - fx * side }, 0x61f5ce, 0.08, 0.32, 0.8, 0, 1.2);
   }
   trail(p: Projectile, dt: number) {
     if ((p.kind !== 'rocket' && p.kind !== 'homing' && p.kind !== 'bomb') || Math.random() > Math.min(1, dt * 30)) return;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG, DT } from '../shared/src/config.js';
-import { groundHeight } from '../shared/src/arena.js';
+import { ARENA_SIZE, groundHeight } from '../shared/src/arena.js';
 import { collideKarts, drivingTelemetry, moveKart, NEUTRAL } from '../shared/src/movement.js';
 import { Prediction } from '../client/src/networking/prediction.js';
 import { duel } from './helpers.js';
@@ -36,15 +36,19 @@ describe('arcade stability regressions', () => {
       expect(launch).toBeCloseTo(21 * (2.6 / 9) * 0.85, 6); expect(peak).toBeGreaterThan(2.6); expect(peak).toBeLessThan(4); expect(k.y).toBe(0);
     }
   });
-  it('keeps an eight-kart pileup grounded without accumulating collision energy', () => {
+  it('keeps an eight-kart pileup stable across flat lanes and the elevated platform', () => {
     const { world, a } = duel();
     for (let i = 2; i < 8; i++) world.addPlayer(String(i), 'Racer ' + i);
     const participants = [...world.players.values()];
     participants.forEach((p, i) => Object.assign(p, { x: -8 + (i % 2) * 0.2, y: 0, z: 0 + Math.floor(i / 2) * 0.2, vx: 0, vy: 0, vz: 20, yaw: i % 2 ? Math.PI : 0 }));
     for (let tick = 0; tick < 360; tick++) {
-      for (const p of participants) world.enqueue(p.id, [{ ...NEUTRAL, seq: tick + 1, throttle: 1, steer: Math.sin(tick / 30) * 0.3 }]);
+      for (const p of participants) world.enqueue(p.id, [{ ...NEUTRAL, seq: tick + 1, throttle: 1 }]);
       world.step();
-      for (const p of participants) { expect(p.y).toBe(0); expect(p.vy).toBe(0); expect(Math.hypot(p.vx, p.vz)).toBeLessThanOrEqual(CONFIG.maxSpeed * CONFIG.boostMultiplier + 1e-8); }
+      for (const p of participants) {
+        if (tick < 60) { expect(p.y).toBe(0); expect(p.vy).toBe(0); }
+        expect(p.y).toBeGreaterThanOrEqual(groundHeight(p.x, p.z) - 1e-8); expect(p.y).toBeLessThan(5);
+        expect(p.vy).toBeLessThanOrEqual(CONFIG.maxJumpVelocity); expect(Math.hypot(p.vx, p.vz)).toBeLessThanOrEqual(CONFIG.maxSpeed * CONFIG.boostMultiplier + 1e-8);
+      }
     }
     expect(a.health).toBe(100);
   });
@@ -54,17 +58,18 @@ describe('arcade stability regressions', () => {
     for (let i = 0; i < 100; i++) { collideKarts(a, b); expect(a.y).toBe(0); expect(b.y).toBe(0); expect(a.vy).toBe(0); expect(b.vy).toBe(0); }
     expect(a.vx ** 2 + b.vx ** 2).toBeLessThanOrEqual(before); expect(b.x - a.x).toBeCloseTo(2 * CONFIG.kartRadius);
   });
-  it('remains upright/grounded and bounds yaw under 10,000 high-speed flat steering steps', () => {
+  it('bounds height, speed and yaw under 10,000 high-speed steering steps across the arena', () => {
     const k = { ...kart(), x: 8, z: -20, vz: 30 };
     for (let i = 0; i < 10000; i++) {
       const yaw = k.yaw; moveKart(k, { ...NEUTRAL, throttle: 1, steer: Math.sin(i / 40), drift: i % 180 < 40 }, true);
       const delta = Math.atan2(Math.sin(k.yaw - yaw), Math.cos(k.yaw - yaw)); expect(Math.abs(delta)).toBeLessThanOrEqual(CONFIG.maxYawRate * DT + 1e-8);
-      expect(k.y).toBe(0); expect(k.vy).toBe(0); expect(Math.hypot(k.vx, k.vz)).toBeLessThanOrEqual(CONFIG.maxSpeed * CONFIG.boostMultiplier + 1e-8);
+      expect(k.y).toBeGreaterThanOrEqual(groundHeight(k.x, k.z) - 1e-8); expect(k.y).toBeLessThan(5);
+      expect(k.vy).toBeLessThanOrEqual(CONFIG.maxJumpVelocity); expect(Math.hypot(k.vx, k.vz)).toBeLessThanOrEqual(CONFIG.maxSpeed * CONFIG.boostMultiplier + 1e-8);
     }
   });
   it('recovers corrupt/out-of-bounds state and separates a kart stuck in a wall', () => {
     const k = { ...kart(), x: Infinity, z: 90, y: 260, vx: NaN, vy: 156, yaw: NaN }; moveKart(k, NEUTRAL);
-    expect(Object.values(k).every(Number.isFinite)).toBe(true); expect(k.y).toBe(0); expect(Math.abs(k.z)).toBeLessThan(35);
+    expect(Object.values(k).every(Number.isFinite)).toBe(true); expect(k.y).toBe(0); expect(Math.abs(k.z)).toBeLessThan(ARENA_SIZE / 2 - 1);
     k.x = 0; k.z = 0; moveKart(k, NEUTRAL); expect(Math.max(Math.abs(k.x), Math.abs(k.z))).toBeGreaterThanOrEqual(2.5 + CONFIG.kartRadius);
   });
   it('uses physical slip for drifting; parked, straight-driving and airborne karts are silent', () => {

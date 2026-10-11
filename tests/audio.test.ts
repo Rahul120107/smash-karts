@@ -30,6 +30,12 @@ function setup() {
   const audio = new GameAudio(); target.dispatchEvent(new Event('pointerdown')); return { audio, target, context: Context.instances[0]! };
 }
 describe('continuous WebAudio lifecycle', () => {
+  it('gives cannon launch a heavy synthesized voice and noise instead of the machine-gun sound', () => {
+    const { audio, context } = setup(), effect = { id: 1, at: 0, x: 0, y: 0, z: 0, player: 'a', kind: 'fire' as const };
+    audio.event({ ...effect, weapon: 'cannon' }, 0); audio.event({ ...effect, id: 2, weapon: 'machineGun' }, 0);
+    expect(context.oscillators[2]!.type).toBe('triangle'); expect(context.oscillators[3]!.type).toBe('square');
+    expect(context.sources).toHaveLength(2); expect(audio.activeVoices).toBe(2); audio.dispose();
+  });
   it('starts the engine and tyre loops once, then changes gains rather than restarting sources', () => {
     const { audio, context, target } = setup(), { a } = duel();
     target.dispatchEvent(new Event('keydown')); target.dispatchEvent(new Event('pointerdown'));

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { batchStatic } from '../game/batch.js';
 export interface KartVisual {
   group: THREE.Group; chassis: THREE.Group; wheels: THREE.Group[]; steering: THREE.Group[];
-  turret: THREE.Group; shield: THREE.Mesh; boost: THREE.Mesh; contact: THREE.Mesh; label: THREE.Sprite;
+  turret: THREE.Group; cannon: THREE.Group; missileMarker: THREE.Mesh; shield: THREE.Mesh; boost: THREE.Mesh; contact: THREE.Mesh; label: THREE.Sprite;
 }
 /** Original open-wheel racer, with four batched body materials. */
 export function createKart(color: number, name: string): KartVisual {
@@ -42,8 +42,16 @@ export function createKart(color: number, name: string): KartVisual {
   const turret = new THREE.Group(); turret.position.set(0.48, 0.95, 0.55);
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.72, 6), dark); barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.3; turret.add(barrel);
   const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.12, 6), metal); muzzle.rotation.x = Math.PI / 2; muzzle.position.z = 0.62; turret.add(muzzle); batchStatic(turret); chassis.add(turret);
+  const cannon = new THREE.Group(); cannon.position.set(0, 0.94, 0.35);
+  const cannonBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.31, 1, 12), dark); cannonBarrel.rotation.x = Math.PI / 2; cannonBarrel.position.z = 0.3; cannon.add(cannonBarrel);
+  for (const z of [-0.12, 0.7]) { const band = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.045, 4, 12), metal); band.position.z = z; cannon.add(band); }
+  const carriage = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.18, 0.65), paint); carriage.position.y = -0.22; cannon.add(carriage);
+  const bore = new THREE.Mesh(new THREE.CircleGeometry(0.19, 12), dark); bore.position.z = 0.81; cannon.add(bore);
+  batchStatic(cannon); cannon.visible = false; chassis.add(cannon);
   const shield = new THREE.Mesh(new THREE.IcosahedronGeometry(1.65, 1), new THREE.MeshBasicMaterial({ color: 0x71e2ff, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide }));
   shield.position.y = 0.8; shield.visible = false; group.add(shield);
+  const missileMarker = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.035, 3, 20, Math.PI * 1.7), new THREE.MeshBasicMaterial({ color: 0xf6a5ff, transparent: true, opacity: 0.7, depthWrite: false }));
+  missileMarker.rotation.x = -Math.PI / 2; missileMarker.position.y = 0.4; missileMarker.visible = false; group.add(missileMarker);
   const boost = new THREE.Mesh(new THREE.ConeGeometry(0.27, 1.4, 6), new THREE.MeshBasicMaterial({ color: 0x62ffdc, transparent: true, opacity: 0.85, depthWrite: false })); boost.position.set(0, 0.5, -1.7); boost.rotation.x = -Math.PI / 2; boost.visible = false; group.add(boost);
   const contact = new THREE.Mesh(new THREE.CircleGeometry(1.1, 12), new THREE.MeshBasicMaterial({ color: 0x11283b, transparent: true, opacity: 0.2, depthWrite: false }));
   contact.rotation.x = -Math.PI / 2; contact.scale.y = 1.3; contact.visible = false; group.add(contact);
@@ -52,5 +60,5 @@ export function createKart(color: number, name: string): KartVisual {
   ctx.fillStyle = '#12273de6'; ctx.beginPath(); ctx.roundRect(0, 4, 512, 84, 24); ctx.fill(); ctx.fillStyle = '#fff6e5'; ctx.fillText(name, 256, 61);
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })); label.position.set(0, 2.5, 0); label.scale.set(2.8, 0.525, 1); group.add(label);
-  return { group, chassis, wheels, steering, turret, shield, boost, contact, label };
+  return { group, chassis, wheels, steering, turret, cannon, missileMarker, shield, boost, contact, label };
 }

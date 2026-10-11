@@ -56,6 +56,7 @@ export function stepProjectiles(world: CombatWorld): void {
     }
     if (p.kind === 'bomb') { stepBomb(p); continue; }
     if (p.kind === 'homing') steerHoming(world, p);
+    if (p.kind === 'cannonball') p.vy -= CONFIG.gravity * DT;
     const old = { x: p.x, y: p.y, z: p.z };
     const next = { x: p.x + p.vx * DT, y: p.y + p.vy * DT, z: p.z + p.vz * DT };
     if (p.maxRange !== undefined) {

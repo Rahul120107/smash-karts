@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../shared/src/config.js';
+import { ARENA_SIZE } from '../shared/src/arena.js';
 import { WEAPONS, WEAPON_IDS } from '../shared/src/weapons.js';
 import { activate } from '../server/src/weapons/activate.js';
 import { damage, explode } from '../server/src/combat/damage.js';
@@ -62,8 +63,8 @@ describe('projectile behaviors', () => {
   });
   it('bombs reflect only the velocity into a wall and keep tangential motion', () => {
     const { world, a } = duel(); equip(a, 'bomb'); activate(world, a); const bomb = world.projectiles.values().next().value!;
-    Object.assign(bomb, { x: 34.5, y: 1, z: 10, vx: 20, vy: 0, vz: 8 }); world.step();
-    expect(bomb.vx).toBeLessThan(0); expect(bomb.vz).toBe(8); expect(bomb.x).toBeLessThan(35 - bomb.radius); expect(bomb.z).toBeGreaterThan(10);
+    Object.assign(bomb, { x: ARENA_SIZE / 2 - 1.5, y: 1, z: 10, vx: 20, vy: 0, vz: 8 }); world.step();
+    expect(bomb.vx).toBeLessThan(0); expect(bomb.vz).toBe(8); expect(bomb.x).toBeLessThan(ARENA_SIZE / 2 - 1 - bomb.radius); expect(bomb.z).toBeGreaterThan(10);
   });
   it('bombs land on obstacle tops instead of passing through them', () => {
     const { world, a } = duel(); equip(a, 'bomb'); activate(world, a); const bomb = world.projectiles.values().next().value!;
@@ -76,7 +77,7 @@ describe('projectile behaviors', () => {
     expect(Math.hypot(joined.x - third.x, joined.z - third.z)).toBeGreaterThan(CONFIG.kartRadius * 2);
     expect(Math.hypot(joined.x - a.x, joined.z - a.z)).toBeGreaterThan(CONFIG.kartRadius * 2);
   });
-  it('scatter cannon spawns five distinct trajectories and can land multiple pellets', () => {
+  it('scatter blaster spawns five distinct trajectories and can land multiple pellets', () => {
     const { world, a, b } = duel(); b.z = 5; equip(a, 'scatter'); activate(world, a);
     expect(world.projectiles.size).toBe(5); expect(new Set([...world.projectiles.values()].map(p => p.vx)).size).toBe(5);
     advance(world, 0.2); expect(b.health).toBeLessThanOrEqual(56); advance(world, 1); expect(world.projectiles.size).toBe(0);
@@ -121,7 +122,7 @@ describe('damage, power-ups, and match rules', () => {
     expect(b.health).toBe(0); expect(a.score).toBe(1); expect(b.deaths).toBe(1);
     damage(world, b, 100, a.id); expect(a.score).toBe(1); advance(world, CONFIG.respawnDelay - 0.1); expect(b.health).toBe(0);
     advance(world, 0.2); expect(b.health).toBe(100); expect(b.weapon).toBeNull(); damage(world, b, 100, a.id); expect(b.health).toBe(100);
-    advance(world, CONFIG.spawnProtection + 0.1); damage(world, b, 100, b.id); expect(b.score).toBe(0); expect(b.deaths).toBe(2);
+    advance(world, CONFIG.spawnProtection + 0.1); damage(world, b, 100, b.id); expect(b.score).toBe(0); expect(b.deaths).toBe(1); expect(b.health).toBe(100);
   });
   it('ends exactly at the match duration, freezes scores, and resets on replay', () => {
     const { world, a, b } = duel(); world.duration = 1; damage(world, b, 100, a.id); advance(world, 1.2);

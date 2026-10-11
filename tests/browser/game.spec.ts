@@ -102,7 +102,7 @@ test('pickup disappearance and glowing respawn synchronize across rendered brows
   await a.screenshot({ path: testInfo.outputPath('pickup-respawn.png') });
 });
 
-test('all eight weapon categories render and synchronize combat between browsers', async ({ browser }, testInfo) => {
+test('all nine weapon categories render and synchronize combat between browsers', async ({ browser }, testInfo) => {
   const ctxA = await browser.newContext(), ctxB = await browser.newContext(); contexts.push(ctxA, ctxB);
   const a = await ctxA.newPage(), b = await ctxB.newPage(); const seenA = observe(a), seenB = observe(b);
   const code = await lobby(a, b), world = server.rooms.rooms.get(code)!.simulation; world.duration = 90;
@@ -201,6 +201,36 @@ test('movement inputs continue while animation frames are paused', async ({ brow
   await expect.poll(() => seen.latest?.players[0]?.ack ?? 0).toBeGreaterThan(initialAck + 30);
   expect(seen.latest!.players[0]!.z).toBeLessThan(25); expect(seen.latest!.players[0]!.y).toBe(0);
   await appliedKey(page, seen, id, 'KeyW', false, input => input.throttle === 0);
+});
+
+test('quick Space taps execute complete bursts and heavy cannon combat in the expanded arena', async ({ browser }, testInfo) => {
+  test.setTimeout(90000);
+  const ctxA = await browser.newContext(), ctxB = await browser.newContext(); contexts.push(ctxA, ctxB);
+  const a = await ctxA.newPage(), b = await ctxB.newPage(), seenA = observe(a), seenB = observe(b);
+  const code = await lobby(a, b), world = server.rooms.rooms.get(code)!.simulation; world.duration = 60; world.random = () => 0.5;
+  await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
+  await a.locator('canvas').click({ position: { x: 600, y: 400 } });
+  const shooter = [...world.players.values()].find(p => p.name === 'Roadrunner')!, victim = [...world.players.values()].find(p => p.name === 'Dusty')!;
+  Object.assign(shooter, { x: -8, y: 0, z: 0, yaw: 0, yawRate: 0, vx: 0, vy: 0, vz: 0, weapon: 'machineGun', ammo: 30, nextFire: 0, invulnerableUntil: 0 });
+  Object.assign(victim, { x: -6.5, y: 0, z: 10, vx: 0, vy: 0, vz: 0, invulnerableUntil: 0 });
+  await expect(a.getByTestId('equipped-weapon')).toHaveText('Machine gun'); await a.keyboard.press('Space');
+  await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.attacking).toBe(true);
+  await expect.poll(() => seenA.latest?.players.find(p => p.id === shooter.id)?.ammo, { timeout: 15000 }).toBe(0);
+  const fireIds = new Set(seenB.history.flatMap(s => s.events).filter(e => e.kind === 'fire' && e.player === shooter.id && e.weapon === 'machineGun').map(e => e.id));
+  expect(fireIds.size).toBe(30); expect(shooter.health).toBe(100); expect(shooter.score).toBe(1);
+  Object.assign(shooter, { weapon: 'cannon', ammo: 1, nextFire: 0 });
+  Object.assign(victim, { x: -8, y: 0, z: 6, health: 100, invulnerableUntil: 0, respawnAt: 0, vx: 0, vy: 0, vz: 0 });
+  await expect(a.getByTestId('equipped-weapon')).toHaveText('Old cannon'); await a.screenshot({ path: testInfo.outputPath('old-cannon-ready.png') });
+  await a.keyboard.press('Space');
+  await expect.poll(() => seenB.history.some(s => s.projectiles.some(p => p.kind === 'cannonball'))).toBe(true);
+  await expect.poll(() => seenB.latest?.players.find(p => p.id === victim.id)?.health ?? 100).toBeLessThan(100);
+  expect(shooter.health).toBe(100);
+  Object.assign(shooter, { x: 50, z: 43, y: 0, yaw: Math.PI / 2, yawRate: 0, vx: 0, vy: 0, vz: 0 });
+  await appliedKey(a, seenA, shooter.id, 'KeyW', true, input => input.throttle === 1);
+  await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.x ?? 0).toBeGreaterThan(54);
+  await appliedKey(a, seenA, shooter.id, 'KeyW', false, input => input.throttle === 0);
+  expect(shooter.x).toBeLessThanOrEqual(54.15 + 1e-8); expect(shooter.y).toBe(0);
+  await a.screenshot({ path: testInfo.outputPath('expanded-arena.png') });
 });
 
 test('prediction remains playable with 120 ms simulated network round-trip delay', async ({ browser }) => {

@@ -1,0 +1,85 @@
+import { test, expect, type Page, type BrowserContext } from '@playwright/test';
+import { startServer } from '../../server/src/networking/server.js';
+import { WEAPON_IDS, WEAPONS } from '../../shared/src/weapons.js';
+import type { ServerMessage, Snapshot } from '../../shared/src/types.js';
+let server: Awaited<ReturnType<typeof startServer>>;
+let contexts: BrowserContext[] = [];
+const errors: string[] = [];
+test.beforeEach(async () => { server = await startServer({ port: 0, host: '127.0.0.1', duration: 12 }); errors.length = 0; });
+test.afterEach(async () => { for (const ctx of contexts.splice(0)) await ctx.close(); await server.close(); expect(errors).toEqual([]); });
+function observe(page: Page) {
+  const observed: { latest: Snapshot | null; history: Snapshot[] } = { latest: null, history: [] };
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('websocket', ws => ws.on('framereceived', frame => {
+    const message = JSON.parse(frame.payload.toString()) as ServerMessage;
+    if (message.type === 'snapshot') { observed.latest = message.state; observed.history.push(message.state); if (observed.history.length > 1000) observed.history.shift(); }
+  }));
+  return observed;
+}
+async function lobby(host: Page, guest: Page) {
+  await host.goto(`http://127.0.0.1:${server.port}`); await guest.goto(`http://127.0.0.1:${server.port}`);
+  await host.getByLabel('YOUR NICKNAME').fill('Roadrunner'); await host.getByRole('button', { name: 'Create room' }).click();
+  const code = await host.getByTestId('room-code').innerText();
+  await guest.getByLabel('YOUR NICKNAME').fill('Dusty'); await guest.getByLabel('Room code').fill(code); await guest.getByRole('button', { name: 'Join', exact: false }).click();
+  await expect(host.locator('.lobby-players')).toContainText('Dusty'); await expect(guest.locator('.lobby-players')).toContainText('Roadrunner');
+  return code;
+}
+test('two independent browser sessions drive, collect, fire, finish, replay, and leave', async ({ browser }, testInfo) => {
+  const ctxA = await browser.newContext(), ctxB = await browser.newContext(); contexts.push(ctxA, ctxB);
+  const a = await ctxA.newPage(), b = await ctxB.newPage(); const seenA = observe(a), seenB = observe(b);
+  const code = await lobby(a, b);
+  await a.screenshot({ path: testInfo.outputPath('lobby.png') });
+  await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
+  await a.locator('canvas').click({ position: { x: 600, y: 400 } }); await a.keyboard.down('KeyW');
+  await expect.poll(() => seenA.latest?.players.find(p => p.name === 'Roadrunner')?.weapon).not.toBeNull();
+  await a.keyboard.up('KeyW'); await expect(a.getByTestId('equipped-weapon')).not.toHaveText('Find a weapon');
+  const player = seenA.latest!.players.find(p => p.name === 'Roadrunner')!;
+  expect(player.z).toBeLessThan(20); expect(player.ack).toBeGreaterThan(0);
+  await expect.poll(() => seenB.latest?.pickups[0]?.availableAt ?? 0).toBeGreaterThan(0);
+  const ammo = player.ammo;
+  await a.keyboard.down('Space');
+  await expect.poll(() => seenB.latest?.players.find(p => p.name === 'Roadrunner')?.ammo ?? 100).toBeLessThan(ammo);
+  await a.keyboard.up('Space');
+  await a.screenshot({ path: testInfo.outputPath('gameplay.png') });
+  await expect(a.getByText('BATTLE COMPLETE')).toBeVisible({ timeout: 20000 }); await expect(b.getByText('BATTLE COMPLETE')).toBeVisible();
+  await a.screenshot({ path: testInfo.outputPath('results.png') });
+  await a.getByRole('button', { name: 'Play again' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
+  await expect.poll(() => seenB.latest?.players.every(p => p.score === 0 && p.deaths === 0 && p.health === 100)).toBe(true);
+  await a.getByRole('button', { name: 'Leave', exact: true }).click(); await expect(a.getByLabel('YOUR NICKNAME')).toBeVisible();
+  await expect.poll(() => server.rooms.rooms.get(code)?.host === server.rooms.rooms.get(code)?.simulation.players.values().next().value?.id).toBe(true);
+  await b.getByRole('button', { name: 'Leave', exact: true }).click(); await expect.poll(() => server.rooms.rooms.size).toBe(0);
+});
+test('all eight weapon categories render and synchronize combat between browsers', async ({ browser }, testInfo) => {
+  const ctxA = await browser.newContext(), ctxB = await browser.newContext(); contexts.push(ctxA, ctxB);
+  const a = await ctxA.newPage(), b = await ctxB.newPage(); const seenA = observe(a), seenB = observe(b);
+  const code = await lobby(a, b), world = server.rooms.rooms.get(code)!.simulation; world.duration = 90;
+  await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
+  await a.locator('canvas').click({ position: { x: 600, y: 400 } });
+  const shooter = [...world.players.values()].find(p => p.name === 'Roadrunner')!, target = [...world.players.values()].find(p => p.name === 'Dusty')!;
+  for (const weapon of WEAPON_IDS) {
+    // Server fixtures arrange reproducible shots. The browser activates them through ordinary Space input.
+    world.projectiles.clear(); world.events = [];
+    Object.assign(shooter, { x: -8, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, weapon, ammo: WEAPONS[weapon].ammo, nextFire: 0 });
+    Object.assign(target, { x: weapon === 'homing' ? -11 : -8, y: 0, z: weapon === 'mine' ? -1.8 : weapon === 'bomb' ? 19 : 6, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, respawnAt: 0 });
+    await expect(a.getByTestId('equipped-weapon')).toHaveText(WEAPONS[weapon].label);
+    const since = world.time;
+    await a.keyboard.down('Space');
+    await expect.poll(() => world.events.some(e => e.kind === 'fire' && e.weapon === weapon && e.at >= since)).toBe(true);
+    await a.keyboard.up('Space');
+    await expect.poll(() => seenB.history.some(s => s.events.some(e => e.kind === 'fire' && e.weapon === weapon && e.at >= since))).toBe(true);
+    if (weapon === 'shield') { await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.shieldUntil ?? 0).toBeGreaterThan(since); }
+    else if (weapon === 'boost') { await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.boostUntil ?? 0).toBeGreaterThan(since); }
+    else { await expect.poll(() => seenB.latest?.players.find(p => p.id === target.id)?.health ?? 100).toBeLessThan(100); }
+    expect(seenA.latest?.players.find(p => p.id === shooter.id)?.ammo).toBeLessThan(WEAPONS[weapon].ammo);
+    if (weapon === 'rocket') await a.screenshot({ path: testInfo.outputPath('rocket-combat.png') });
+  }
+  expect(world.projectiles.size).toBeLessThan(20);
+  await a.screenshot({ path: testInfo.outputPath('weapons-tested.png') });
+});
+test('invalid room codes and disconnected servers give usable feedback', async ({ browser }) => {
+  const ctx = await browser.newContext(); contexts.push(ctx); const page = await ctx.newPage(); observe(page);
+  await page.goto(`http://127.0.0.1:${server.port}`); await page.getByLabel('YOUR NICKNAME').fill('Tester'); await page.getByLabel('Room code').fill('ZZZZZ');
+  await page.getByRole('button', { name: 'Join' }).click(); await expect(page.getByRole('alert')).toContainText('Room not found');
+  await page.getByRole('button', { name: 'Dismiss error' }).click(); await page.getByRole('button', { name: 'Create room' }).click(); await expect(page.getByTestId('room-code')).toBeVisible();
+  await server.close(); await expect(page.getByText('Disconnected · retrying…')).toBeVisible();
+});

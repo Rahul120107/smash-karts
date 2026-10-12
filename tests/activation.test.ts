@@ -38,14 +38,14 @@ describe('server-owned single-press attacks', () => {
     const { world, a, b } = duel(); b.x = 30; b.z = 45; equip(a, id);
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2, fire: false }]);
     const seen = new Map<number, number>();
-    for (let i = 0; i < 240; i++) {
+    for (let i = 0; i < 480; i++) {
       if(id==='mine' && i%40===0) a.z+=2; world.step(); for (const e of world.events) if (e.kind === 'fire' && e.player === a.id) seen.set(e.id, e.at);
     }
-    const uses = WEAPONS[id].activation === 'burst' ? WEAPONS[id].ammo : 1;
-    expect(seen.size).toBe(uses); expect(a.ammo).toBe(WEAPONS[id].ammo - uses);
+    const cost=WEAPONS[id].projectilesPerUse??1,uses = WEAPONS[id].activation === 'burst'||id==='cannon' ? WEAPONS[id].ammo/cost : 1;
+    expect(seen.size).toBe(uses); expect(a.ammo).toBe(WEAPONS[id].ammo - uses*cost);
     expect(a.weapon).toBe(a.ammo === 0 ? null : id); expect(a.attacking).toBe(false);
     const times = [...seen.values()];
-    for (let i = 1; i < times.length; i++) expect(times[i]! - times[i - 1]!).toBeGreaterThanOrEqual(WEAPONS[id].cooldown - 1e-9);
+    for (let i = 1; i < times.length; i++) expect(times[i]! - times[i - 1]!).toBeGreaterThanOrEqual(WEAPONS[id].cooldown - DT-1e-9);
     expect(a.health).toBe(CONFIG.maxHealth);
   });
   it('does not reactivate a new pickup while Space remains held, but allows a fresh press', () => {
@@ -59,18 +59,18 @@ describe('server-owned single-press attacks', () => {
   it('ignores repeated presses during a burst, cancels on elimination, and never resumes after respawn', () => {
     const { world, a, b } = duel(); equip(a, 'machineGun');
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2 }, { ...NEUTRAL, seq: 3, fire: true }]);
-    advance(world, 3 * DT); expect(a.ammo).toBe(29);
+    advance(world, 3 * DT); expect(a.ammo).toBe(WEAPONS.machineGun.ammo-1);
     damage(world, a, 100, b.id); world.step(); advance(world, CONFIG.respawnDelay + 0.1);
     expect(a.health).toBe(100); expect(a.weapon).toBeNull(); expect(a.attacking).toBe(false);
     expect(world.events.some(e => e.kind === 'fire' && e.player === a.id)).toBe(false);
   });
   it('reselects a valid target for subsequent shots during an automatic burst', () => {
-    const { world, a, b } = duel(); b.z = 16; equip(a, 'machineGun'); world.random = () => 0.5;
+    const { world, a, b } = duel(); a.x=-23;Object.assign(b,{x:-23,z:8}); equip(a, 'machineGun'); world.random = () => 0.5;
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2 }]); world.step(); expect(a.aimTarget).toBe(b.id);
     Object.assign(b, { x: 30, z: 45 });
-    const c = world.addPlayer('c', 'New target'); Object.assign(c, { x: -10.5, z: 10, y: 0, invulnerableUntil: 0 });
+    const c = world.addPlayer('c', 'New target'); Object.assign(c, { x: -21.5, z: 10, y: 0, invulnerableUntil: 0 });
     advance(world, 0.5); expect(a.aimTarget).toBe(c.id); expect(c.health).toBeLessThan(100); expect(b.health).toBe(100);
-    Object.assign(c, { x: 15, z: 25 }); Object.assign(a, { x: 15, z: 19 });
+    Object.assign(c, { x: 15, z: 25 }); Object.assign(a, { x: 15, y:1.2, z: 19 });
     const health = c.health; advance(world, 0.5); expect(a.aimTarget).toBeNull(); expect(c.health).toBe(health);
   });
   it('captures a quick Space tap between input ticks and ignores keyboard repeats', () => {

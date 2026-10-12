@@ -32,19 +32,19 @@ describe('reference-informed ammunition and activation', () => {
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 4 }, { ...NEUTRAL, seq: 5, fire: true }]); world.step(); world.step();
     expect(a.ammo).toBe(1); advance(world,.7); expect(a.ammo).toBe(0); expect(a.attacking).toBe(false);
   });
-  it('heavy bullets assist within their cone and deal authoritative direct damage', () => {
-    const { world, a, b } = duel(); world.random = () => .5; equip(a, 'bullets'); activate(world, a);
+  it('standard bullets fire three straight projectiles with authoritative direct damage', () => {
+    const { world, a, b } = duel();a.x=-23;b.x=-23; world.random = () => .5; equip(a, 'bullets'); activate(world, a);
     const shot = world.projectiles.values().next().value!;
-    expect(shot).toMatchObject({ kind: 'slug', target: null, blast: 0 }); expect(a.aimTarget).toBe(b.id);
-    advance(world, .2); expect(b.health).toBe(100 - WEAPONS.bullets.damage); expect(a.health).toBe(100);
-    b.health = 100; b.x = -10; equip(a, 'bullets'); activate(world, a); advance(world, .3); expect(b.health).toBe(100 - WEAPONS.bullets.damage);
+    expect(shot).toMatchObject({ kind: 'slug', target: null, blast: 0 }); expect(a.aimTarget).toBeNull();expect(world.projectiles.size).toBe(3);
+    advance(world, .2); expect(b.health).toBe(100 - 3*WEAPONS.bullets.damage); expect(a.health).toBe(100);
+    b.health = 100; b.x = -21; equip(a, 'bullets'); activate(world, a); advance(world, .3); expect(b.health).toBe(100);
   });
   it('a slow blast missile damages multiple opponents within its larger radius, excluding its owner', () => {
     const { world, a, b } = duel(), c = world.addPlayer('c', 'Third'), d = world.addPlayer('d', 'Distant');
-    Object.assign(c, { x: -18, y: 0, z: 8, invulnerableUntil: 0 }); Object.assign(d, { x: -12, y: 0, z: 19, invulnerableUntil: 0 });
+    Object.assign(c, { x: 54, y: 0, z: 8, invulnerableUntil: 0 }); Object.assign(d, { x: 60, y: 0, z: 19, invulnerableUntil: 0 });
     equip(a, 'blastMissile'); activate(world, a); const missile = world.projectiles.values().next().value!;
     expect(missile.radius).toBeGreaterThan(WEAPONS.rocket.radius); expect(missile.vz).toBeLessThan(WEAPONS.rocket.speed);
-    Object.assign(missile, { x: b.x, y: .65, z: b.z }); explode(world, missile);
+    Object.assign(missile, { x: b.x, y: .65, z: b.z }); explode(world, missile,b.id);
     expect(a.health).toBe(100); expect(b.health).toBe(0); expect(c.health).toBeLessThan(100); expect(d.health).toBe(100);
     expect(a.score).toBe(1); expect(world.events.find(e => e.kind === 'explosion')).toMatchObject({ player: a.id, weapon: 'blastMissile', radius: 10 });
   });
@@ -63,10 +63,10 @@ describe('server-owned contact power-ups', () => {
     const { world, a, b } = duel(); equip(a, 'orbit'); activate(world, a); b.z = 1.8; b.invulnerableUntil = 2;
     stepContactAttacks(world); expect(b.health).toBe(100); b.invulnerableUntil = 0; b.y = 3;
     stepContactAttacks(world); expect(b.health).toBe(100);
-    const trunk = WALLS.find(w => w.style === 'barrier' && w.width < 2)!;
+    const trunk = WALLS.find(w => w.style === 'tree' && !w.base)!;
     Object.assign(a, { x: trunk.x - 1.1, y: 0, z: trunk.z }); Object.assign(b, { x: trunk.x + 1.1, y: 0, z: trunk.z });
     stepContactAttacks(world); expect(b.health).toBe(100);
-    Object.assign(a, { x: -12, z: 0 }); Object.assign(b, { x: -12, z: 1.8 }); world.time = a.orbitUntil!;
+    Object.assign(a, { x: 60, z: 0 }); Object.assign(b, { x: 60, z: 1.8 }); world.time = a.orbitUntil!;
     stepContactAttacks(world); expect(b.health).toBe(100);
   });
   it('shielded opponents survive orbit contact, and an orbit grants no damage immunity', () => {
@@ -91,12 +91,12 @@ describe('server-owned contact power-ups', () => {
       for (let i = 1; i < times.length; i++) expect(times[i]! - times[i-1]!).toBeGreaterThanOrEqual(.15 - 1e-9);
     }
     b.shieldUntil = world.time; stepContactAttacks(world); expect(b.health).toBe(0); expect(a.score).toBe(1);
-    world.start(); Object.assign(a, { x: -12, z: 0, invulnerableUntil: 0 }); Object.assign(b, { x: -12, z: 1.8, invulnerableUntil: 0 });
+    world.start(); Object.assign(a, { x: 60, z: 0, invulnerableUntil: 0 }); Object.assign(b, { x: 60, z: 1.8, invulnerableUntil: 0 });
     equip(a, 'shield'); activate(world, a); equip(b, 'shield'); activate(world, b); world.events = [];
     stepContactAttacks(world); expect(world.events.filter(e => e.kind === 'shieldImpact')).toHaveLength(2);
   });
   it('death, disconnect, and replay stop contact attacks without residual damage', () => {
-    const { world, a, b } = duel(); equip(a, 'orbit'); activate(world, a); damage(world, a, 100, b.id);
+    const { world, a, b } = duel(); equip(a, 'orbit'); activate(world, a); damage(world, a, 1000, b.id);
     expect(a.orbitUntil).toBe(0); advance(world, CONFIG.respawnDelay + .1); expect(a.orbitUntil).toBe(0);
     equip(a, 'orbit'); activate(world, a); world.start(); expect(a.orbitUntil).toBe(0);
     equip(a, 'orbit'); activate(world, a); world.removePlayer(a.id); stepContactAttacks(world); expect(b.health).toBe(100);
@@ -121,20 +121,20 @@ describe('fixed Free For All rules', () => {
 
 describe('homing terrain and muzzle validation', () => {
   it('terrain occludes large-area explosions rather than allowing splash through a ramp', () => {
-    const { world, a, b } = duel(); Object.assign(a, { x: -46, z: 0, yaw: Math.PI / 2 }); Object.assign(b, { x: -34, z: 0 });
+    const { world, a, b } = duel(); Object.assign(a, { x: 0, z: -50, yaw: 0 }); Object.assign(b, { x: 0, z: -36 });
     equip(a, 'blastMissile'); activate(world, a); const missile = world.projectiles.values().next().value!;
-    Object.assign(missile, { x: -45.2, y: .65, z: 0 }); explode(world, missile); expect(b.health).toBe(100); expect(a.health).toBe(100);
+    Object.assign(missile, { x: 0, y: .35, z: -49 }); explode(world, missile); expect(b.health).toBe(100); expect(a.health).toBe(100);
   });
   it('does not acquire an enemy hidden behind a ramp, or a protected enemy', () => {
-    const { world, a, b } = duel(); Object.assign(a, { x: -46, z: 0, yaw: Math.PI / 2 }); Object.assign(b, { x: -34, z: 0 });
+    const { world, a, b } = duel(); Object.assign(a, { x: 0, z: -50, yaw: 0 }); Object.assign(b, { x: 0, z: -36 });
     equip(a, 'homing'); activate(world, a); expect(world.projectiles.values().next().value!.target).toBeNull();
-    world.projectiles.clear(); Object.assign(a, { x: -12, z: 0, yaw: 0 }); Object.assign(b, { x: -12, z: 8, invulnerableUntil: 2 });
+    world.projectiles.clear(); Object.assign(a, { x: 60, z: 0, yaw: 0 }); Object.assign(b, { x: 60, z: 8, invulnerableUntil: 2 });
     equip(a, 'homing'); activate(world, a); expect(world.projectiles.values().next().value!.target).toBeNull();
   });
   it('a projectile muzzle cannot spawn on the opposite side of a ramp face', () => {
-    const { world, a, b } = duel(); Object.assign(a, { x: -45.9, z: 0, yaw: Math.PI / 2 }); Object.assign(b, { x: -34, z: 0 });
+    const { world, a, b } = duel(); Object.assign(a, { x: 0, z: -47.7, yaw: 0 }); Object.assign(b, { x: 0, z: -36 });
     equip(a, 'rocket'); activate(world, a); const rocket = world.projectiles.values().next().value!;
-    expect(rocket.x).toBeLessThan(-45); expect(rocket.expires).toBe(world.time); expect(rocket.owner).toBe(a.id);
+    expect(rocket.z).toBeLessThan(-46); expect(rocket.expires).toBe(world.time); expect(rocket.owner).toBe(a.id);
     world.step(); expect(a.health).toBe(100); expect(world.projectiles.size).toBe(0);
   });
 });
@@ -142,7 +142,7 @@ describe('homing terrain and muzzle validation', () => {
 describe('new perimeter platform prediction', () => {
   it('agrees with the authoritative heightfield through a ramp and landing', () => {
     const { world, a, b } = duel(), ramp = RAMPS[0]!;
-    Object.assign(a, { x: ramp.x, y: 0, z: -26, yaw: 0, vy: 0, vx: 0, vz: 18 }); Object.assign(b, { x: 30, z: 45 });
+    Object.assign(a, { x: -14, y: 0, z: ramp.z, yaw: Math.PI/2, vy: 0, vx: 18, vz: 0 }); Object.assign(b, { x: 30, z: 45 });
     const prediction = new Prediction(); prediction.reconcile(world.snapshot('ABCDE', a.id, 8), a.id);
     let elevated = false;
     for (let i = 1; i <= 330; i++) {

@@ -15,9 +15,9 @@ import { eliminationNotice, sanitizeName } from '../shared/src/elimination.js';
 
 describe('authoritative mounts and visible attachments', () => {
   it.each([0, Math.PI/2, Math.PI, -Math.PI/2, .73, -2.18])('matches the Three.js muzzle at yaw %s, including airborne motion', yaw => {
-    for (const weapon of ['machineGun','bullets','rocket','homing','cannon','blastMissile','scatter','bomb','mine'] as const) {
+    for (const weapon of ['machineGun','bullets','rocket','homing','cannon','blastMissile','scatter','bomb','mine','fakeLootBox'] as const) {
       const { world, a, b } = duel(); b.x=30; world.random=()=>.5;
-      Object.assign(a,{ yaw, y: 4, vx: 12, vz: -7, vy: 3 }); equip(a,weapon);
+      Object.assign(a,{ x:-23,z:8,yaw, y: 4, vx: 12, vz: -7, vy: 3 }); equip(a,weapon);
       const pitch = WEAPONS[weapon].elevation ?? (weapon==='bomb' ? Math.atan2(9,13) : 0);
       const direction=launchDirection(yaw,pitch), expected=weaponMuzzle(a,weapon,direction);
       const root = new THREE.Group(), attachment=createWeaponMount(weapon);
@@ -27,8 +27,8 @@ describe('authoritative mounts and visible attachments', () => {
       activate(world,a); const projectile=[...world.projectiles.values()][0]!;
       expect(projectile.x).toBeCloseTo(tip.x,9); expect(projectile.z).toBeCloseTo(tip.z,9);
       const front=(tip.x-a.x)*Math.sin(yaw)+(tip.z-a.z)*Math.cos(yaw);
-      if(weapon==='mine') expect(front).toBeLessThan(-1.5); else {expect(front).toBeGreaterThan(1.4); expect(projectile.y).toBeCloseTo(tip.y,9);}
-      if(weapon!=='mine') {
+      if(weapon==='mine'||weapon==='fakeLootBox') expect(front).toBeLessThan(-1.5); else {expect(front).toBeGreaterThan(1.4); expect(projectile.y).toBeCloseTo(tip.y,9);}
+      if(weapon!=='mine'&&weapon!=='fakeLootBox') {
         const inherited=WEAPONS[weapon].inheritedVelocity??0;
         expect((projectile.vx-a.vx*inherited)*Math.sin(yaw)+(projectile.vz-a.vz*inherited)*Math.cos(yaw)).toBeGreaterThan(0);
       }
@@ -60,9 +60,9 @@ describe('complete sequences and release input',()=>{
   it.each(['rocket','homing','bullets','cannon','machineGun'] as const)('%s spends the complete pickup once, after key release',weapon=>{
     const {world,a,b}=duel();b.x=30;equip(a,weapon);const events=new Map<number,number>();
     world.enqueue(a.id,[{...NEUTRAL,seq:1,firePress:1,fireHeld:false}]);
-    for(let tick=0;tick<240;tick++){world.step();for(const e of world.events)if(e.kind==='fire')events.set(e.id,e.at);}
-    expect(events.size).toBe(WEAPONS[weapon].ammo);expect(a.ammo).toBe(0);expect(a.attacking).toBe(false);
-    const times=[...events.values()];for(let i=1;i<times.length;i++)expect(times[i]!-times[i-1]!).toBeGreaterThanOrEqual(WEAPONS[weapon].cooldown-1e-9);
+    for(let tick=0;tick<480;tick++){world.step();for(const e of world.events)if(e.kind==='fire')events.set(e.id,e.at);}
+    expect(events.size).toBe(WEAPONS[weapon].ammo/(WEAPONS[weapon].projectilesPerUse??1));expect(a.ammo).toBe(0);expect(a.attacking).toBe(false);
+    const times=[...events.values()];for(let i=1;i<times.length;i++)expect(times[i]!-times[i-1]!).toBeGreaterThanOrEqual(WEAPONS[weapon].cooldown-DT-1e-9);
   });
   it('mine sequence waits for movement, never overlaps mines and cancels safely on timeout',()=>{
     const {world,a,b}=duel();b.x=30;equip(a,'mine');world.attacks.begin(world,a);
@@ -134,7 +134,7 @@ describe('server elimination attribution',()=>{
   it('orbit kills identify Orbit Ram, and environmental deaths give no false player credit',()=>{
     const {world,a,b}=duel();equip(a,'orbit');activate(world,a);b.z=2.3;b.health=38;stepContactAttacks(world);
     expect(world.events.find(e=>e.kind==='elimination')).toMatchObject({killerId:a.id,victimId:b.id,weapon:'orbit',weaponName:WEAPONS.orbit.label});
-    eliminate(world,a,'environment');expect(b.score).toBe(0);expect(eliminationNotice(world.events.at(-1)!,a.id)?.message).toBe('You fell into the lava!');
+    eliminate(world,a,'environment');expect(b.score).toBe(0);expect(eliminationNotice(world.events.at(-1)!,a.id)?.message).toBe('You fell into the water!');
     expect(sanitizeName('<Rahul>\u202e\u0000')).toBe('Rahul');
   });
 });

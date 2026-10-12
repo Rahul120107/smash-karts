@@ -1,11 +1,11 @@
 import { CONFIG, DT } from './config.js';
-import { arenaClamp, groundHeight, rampHeight, rampHalfWidth, RAMPS, WALLS, toLocal, toWorld } from './arena.js';
+import { arenaClamp, groundHeight, rampHeight, rampHalfWidth, RAMPS, queryWalls, SPAWNS, toLocal, toWorld } from './arena.js';
 import { clamp } from './math.js';
 import type { Input, KartState } from './types.js';
 export const NEUTRAL: Input = { seq: 0, throttle: 0, steer: 0, fire: false, drift: false };
 
 /** Shared arcade dynamics. Circle/wall contacts plus heightfield suspension, no vehicle engine needed. */
-export function moveKart(k: KartState, input: Input, boosted = false, dt = DT): number {
+export function moveKart(k: KartState, input: Input, boosted: boolean|number = false, dt = DT): number {
   if (!Number.isFinite(dt) || dt <= 0) return 0;
   const steps = Math.min(12, Math.ceil(dt / DT));
   const step = Math.min(dt, 12 * DT) / steps;
@@ -15,9 +15,10 @@ export function moveKart(k: KartState, input: Input, boosted = false, dt = DT): 
   return impact;
 }
 
-function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number): number {
+function integrateKart(k: KartState, input: Input, boosted: boolean|number, dt: number): number {
+  const multiplier=typeof boosted==='number'?clamp(boosted,1,CONFIG.boostMultiplier):boosted?CONFIG.boostMultiplier:1;
   resolveCeilings(k);
-  const oldX = k.x, oldY = k.y, oldZ = k.z, oldGround = groundHeight(k.x, k.z);
+  const oldX = k.x, oldY = k.y, oldZ = k.z, oldGround = groundHeight(k.x, k.z, k.y);
   const grounded = k.y <= oldGround + CONFIG.groundTolerance && k.vy <= CONFIG.groundTolerance;
   const fx = Math.sin(k.yaw), fz = Math.cos(k.yaw);
   let forward = k.vx * fx + k.vz * fz;
@@ -27,10 +28,10 @@ function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number)
   // Torque tapers toward top speed instead of meeting a hard speed cap abruptly.
   const torque = input.throttle > 0 ? 0.9 + 0.1 * (1 - clamp(Math.abs(forward) / CONFIG.maxSpeed, 0, 1)) ** 2 : 1;
   const wasBraking = input.throttle < 0 && forward > 0.5;
-  forward += input.throttle * acceleration * (boosted ? 1 : torque) * traction * dt;
+  forward += input.throttle * acceleration * (multiplier>1 ? 1 : torque) * traction * dt;
   if (wasBraking && forward < 0) forward = 0;
   forward *= Math.exp(-(input.throttle === 0 ? 1.6 : 0.45) * dt);
-  const maximum = CONFIG.maxSpeed * (boosted ? CONFIG.boostMultiplier : 1);
+  const maximum = CONFIG.maxSpeed * multiplier;
   forward = clamp(forward, -CONFIG.reverseSpeed, maximum);
   const drifting = input.drift && grounded && Math.abs(forward) > 5;
   lateral *= Math.exp(-(drifting ? CONFIG.driftGrip : CONFIG.roadGrip) * traction * dt);
@@ -53,16 +54,17 @@ function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number)
   const contactSpeed = Math.hypot(k.vx, k.vz);
   resolveWalls(k); resolveRampSides(k, { x: oldX, y: oldY, z: oldZ });
   const impact = Math.max(0, contactSpeed - Math.hypot(k.vx, k.vz));
-  const ground = groundHeight(k.x, k.z);
+  const ground = groundHeight(k.x, k.z, k.y);
   // Supported motion never stores suspension/slope correction as ballistic velocity.
   // Only a real crest/ledge departure can launch, using a bounded approach slope.
-  const previousGround = groundHeight(oldX - k.vx * dt, oldZ - k.vz * dt);
-  const earlierGround = groundHeight(oldX - k.vx * dt * 2, oldZ - k.vz * dt * 2);
+  const previousGround = groundHeight(oldX - k.vx * dt, oldZ - k.vz * dt, oldY);
+  const earlierGround = groundHeight(oldX - k.vx * dt * 2, oldZ - k.vz * dt * 2, oldY);
   // A step straddling the triangular crest can average its rise to almost zero.
   // Retain the preceding approach grade so launch strength doesn't depend on tick alignment.
   const previousRise = Math.max(oldGround - previousGround, previousGround - earlierGround);
   // Small painted curbs are traversable steps, never launch ramps.
-  const crest = grounded && oldGround > CONFIG.maxStepHeight && previousRise > 0.002 && ground <= oldGround + 1e-9 && Math.hypot(k.vx, k.vz) >= CONFIG.rampJumpSpeed;
+  const onLaunchRamp=RAMPS.some(r=>{const p=toLocal(oldX,oldZ,r);return Math.abs(p.x)<r.width/2 && Math.abs(p.z)<r.depth/2+.5;});
+  const crest = onLaunchRamp && grounded && oldGround > CONFIG.maxStepHeight && previousRise > 0.002 && ground <= oldGround + 1e-9 && Math.hypot(k.vx, k.vz) >= CONFIG.rampJumpSpeed;
   if (crest) {
     k.vy = clamp(previousRise / dt * 0.85, 0, CONFIG.maxJumpVelocity);
     k.y += k.vy * dt;
@@ -79,11 +81,11 @@ function integrateKart(k: KartState, input: Input, boosted: boolean, dt: number)
 
 /** Vertical roof contacts cannot turn a jump into an enormous sideways impulse. */
 export function resolveCeilings(k: KartState) {
-  for (const wall of WALLS) {
+  for (const wall of queryWalls(k.x-1,k.z-1,k.x+1,k.z+1)) {
     const base = wall.base ?? 0;
     if (!base || k.y >= base || k.y + CONFIG.kartHeight <= base) continue;
     if (Math.abs(toLocal(k.x, k.z, wall).x) > wall.width / 2 + CONFIG.kartRadius || Math.abs(toLocal(k.x, k.z, wall).z) > wall.depth / 2 + CONFIG.kartRadius) continue;
-    k.y = Math.max(groundHeight(k.x, k.z), base - CONFIG.kartHeight); k.vy = Math.min(0, k.vy);
+    k.y = Math.max(groundHeight(k.x, k.z, k.y), base - CONFIG.kartHeight); k.vy = Math.min(0, k.vy);
   }
 }
 
@@ -118,8 +120,8 @@ export function resolveRampSides(k: KartState, previous?: { x: number; y: number
 
 /** Recover corrupted/stuck states identically on client and server, without freezing real jumps. */
 export function recoverKart(k: KartState) {
-  if (!Number.isFinite(k.x)) k.x = -8;
-  if (!Number.isFinite(k.z)) k.z = 18;
+  if (!Number.isFinite(k.x)) k.x = SPAWNS[0]!.x;
+  if (!Number.isFinite(k.z)) k.z = SPAWNS[0]!.z;
   if (!Number.isFinite(k.yaw)) k.yaw = 0;
   k.yawRate = Number.isFinite(k.yawRate) ? clamp(k.yawRate!, -CONFIG.maxYawRate, CONFIG.maxYawRate) : 0;
   const bounded = arenaClamp(k.x, k.z, 1 + CONFIG.kartRadius);
@@ -140,14 +142,17 @@ export function drivingTelemetry(k: KartState) {
   const speed = Math.hypot(k.vx, k.vz), forward = k.vx * Math.sin(k.yaw) + k.vz * Math.cos(k.yaw);
   const lateral = k.vx * Math.cos(k.yaw) - k.vz * Math.sin(k.yaw);
   const slip = Math.abs(Math.atan2(lateral, Math.abs(forward) + 1));
-  const grounded = Math.abs(k.y - groundHeight(k.x, k.z)) < 0.12 && Math.abs(k.vy) < 0.2;
+  const grounded = Math.abs(k.y - groundHeight(k.x, k.z, k.y)) < 0.12 && Math.abs(k.vy) < 0.2;
   return { speed, forward, lateral, slip, grounded, sliding: grounded && speed > 5 && Math.abs(lateral) > 1.1 && slip > 0.12 };
 }
 
 export function resolveWalls(k: KartState): void {
-  for (const w of WALLS) {
+  for (const w of queryWalls(k.x-1,k.z-1,k.x+1,k.z+1)) {
     const base = w.base ?? 0;
-    if (k.y >= base + w.height || k.y + CONFIG.kartHeight <= base) continue;
+    if (k.y >= base + w.height - 1e-7 || k.y + CONFIG.kartHeight <= base) continue;
+    // The wheel approaches a deck on its continuous road slope before this tick's
+    // support snap. Permit the small final step, while keeping the underside solid.
+    if(w.style==='deck'&&k.y>=base+w.height-CONFIG.maxStepHeight)continue;
     const local = toLocal(k.x, k.z, w);
     const minX = -w.width / 2, maxX = w.width / 2, minZ = -w.depth / 2, maxZ = w.depth / 2;
     const cx = clamp(local.x, minX, maxX), cz = clamp(local.z, minZ, maxZ);
@@ -171,8 +176,8 @@ export function collideKarts(a: KartState, b: KartState): number {
   let dx = b.x - a.x, dz = b.z - a.z;
   const d = Math.hypot(dx, dz), minimum = CONFIG.kartRadius * 2;
   if (d >= minimum) return 0;
-  const groundedA = Math.abs(a.y - groundHeight(a.x, a.z)) < CONFIG.groundTolerance && a.vy <= 0;
-  const groundedB = Math.abs(b.y - groundHeight(b.x, b.z)) < CONFIG.groundTolerance && b.vy <= 0;
+  const groundedA = Math.abs(a.y - groundHeight(a.x, a.z, a.y)) < CONFIG.groundTolerance && a.vy <= 0;
+  const groundedB = Math.abs(b.y - groundHeight(b.x, b.z, b.y)) < CONFIG.groundTolerance && b.vy <= 0;
   if (d < 1e-8) { dx = 1; dz = 0; } else { dx /= d; dz /= d; }
   const push = (minimum - d) / 2;
   a.x -= dx * push; a.z -= dz * push; b.x += dx * push; b.z += dz * push;
@@ -186,7 +191,7 @@ export function collideKarts(a: KartState, b: KartState): number {
   resolveWalls(a); resolveWalls(b);
   resolveRampSides(a); resolveRampSides(b);
   for (const [k, grounded] of [[a, groundedA], [b, groundedB]] as const) {
-    if (grounded && k.y <= groundHeight(k.x, k.z) + CONFIG.groundSnapDistance) { k.y = groundHeight(k.x, k.z); k.vy = 0; }
+    if (grounded && k.y <= groundHeight(k.x, k.z, k.y) + CONFIG.groundSnapDistance) { k.y = groundHeight(k.x, k.z, k.y); k.vy = 0; }
     recoverKart(k);
   }
   return Math.max(0, closing);

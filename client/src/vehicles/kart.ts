@@ -3,9 +3,10 @@ import { batchStatic } from '../game/batch.js';
 import { newSuspension, type SuspensionState } from './animation.js';
 import { createWeaponMount } from '../weapons/mounts.js';
 import { WEAPONS } from '../../../shared/src/weapons.js';
+import {createOrbitVisual} from '../weapons/orbit-visual.js';
 export interface KartVisual {
   group: THREE.Group; chassis: THREE.Group; wheels: THREE.Group[]; steering: THREE.Group[]; suspension: SuspensionState;
-  turret: THREE.Group; cannon: THREE.Group; launcher: THREE.Group; orbit: THREE.Group; missileMarker: THREE.Mesh; shield: THREE.Mesh; boost: THREE.Mesh; contact: THREE.Mesh; label: THREE.Sprite;
+  turret: THREE.Group; rotary:THREE.Group; star:THREE.Group; cannon: THREE.Group; launcher: THREE.Group; orbit: THREE.Group; missileMarker: THREE.Mesh; shield: THREE.Mesh; boost: THREE.Mesh; contact: THREE.Mesh; label: THREE.Sprite;
 }
 /** Original aerodynamic shell with compact battle-kart proportions. +Z is the nose. */
 export function kartShell(sections: [number, number, number][]) {
@@ -103,6 +104,7 @@ export function createKart(color: number, name: string): KartVisual {
   const gunSupport=new THREE.Mesh(new THREE.BoxGeometry(.14,.45,.2),dark);gunSupport.position.y=-.3;turret.add(gunSupport);
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.72, 6), dark); barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.3; turret.add(barrel);
   const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.12, 6), metal); muzzle.rotation.x = Math.PI / 2; muzzle.position.z = 0.62; turret.add(muzzle); batchStatic(turret); group.add(turret);
+  const rotary=new THREE.Group();rotary.name='rotary-barrels';for(let i=0;i<3;i++){const a=i*Math.PI*2/3,barrel=new THREE.Mesh(new THREE.CylinderGeometry(.025,.03,.65,6),metal);barrel.rotation.x=Math.PI/2;barrel.position.set(Math.sin(a)*.08,Math.cos(a)*.08,.32);rotary.add(barrel);}batchStatic(rotary);turret.add(rotary);
   const cannon = createWeaponMount('cannon').group; cannon.rotation.x = -WEAPONS.cannon.elevation!;
   const cannonBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.31, 1, 12), dark); cannonBarrel.rotation.x = Math.PI / 2; cannonBarrel.position.z = 0.3; cannon.add(cannonBarrel);
   for (const z of [-0.12, 0.7]) { const band = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.045, 4, 12), metal); band.position.z = z; cannon.add(band); }
@@ -116,16 +118,8 @@ export function createKart(color: number, name: string): KartVisual {
   batchStatic(launcher); launcher.visible=false; group.add(launcher);
   const throwable = createWeaponMount('bomb'); throwable.group.rotation.x=-Math.atan2(WEAPONS.bomb.launchVelocityY!,WEAPONS.bomb.speed); group.add(throwable.group);
   group.add(createWeaponMount('mine').group);
-  const orbit = new THREE.Group(), orbitMaterial = new THREE.MeshStandardMaterial({color:0xd7a4ff,metalness:.6,roughness:.35,emissive:0x7d3caf,emissiveIntensity:1.1});
-  for(let i=0;i<3;i++) {
-    const angle=i*Math.PI*2/3,x=Math.sin(angle)*WEAPONS.orbit.orbit!.radius,z=Math.cos(angle)*WEAPONS.orbit.orbit!.radius;
-    const ball=new THREE.Mesh(new THREE.IcosahedronGeometry(.35,1),orbitMaterial);ball.position.set(x,0,z);orbit.add(ball);
-    for(let j=0;j<6;j++) {
-      const spike=new THREE.Mesh(new THREE.ConeGeometry(.09,.36,5),orbitMaterial);
-      const a=j*Math.PI/3;spike.position.set(x+Math.sin(a)*.37,0,z+Math.cos(a)*.37);spike.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(Math.sin(a),0,Math.cos(a)));orbit.add(spike);
-    }
-  }
-  batchStatic(orbit);orbit.position.y=.65;orbit.visible=false;group.add(orbit);
+  const orbit=createOrbitVisual();group.add(orbit);
+  const star=new THREE.Group(),shape=new THREE.Shape();for(let i=0;i<10;i++){const a=i*Math.PI/5,r=i%2?.19:.43,x=Math.sin(a)*r,y=Math.cos(a)*r;i?shape.lineTo(x,y):shape.moveTo(x,y);}shape.closePath();star.add(new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth:.08,bevelEnabled:true,bevelSize:.025,bevelThickness:.025,bevelSegments:1,steps:1}),new THREE.MeshStandardMaterial({color:0xffe96d,emissive:0xffba21,emissiveIntensity:1.3,metalness:.2,roughness:.26})));star.position.y=1.9;star.visible=false;group.add(star);
   const shield = new THREE.Mesh(new THREE.IcosahedronGeometry(1.65, 1), new THREE.MeshBasicMaterial({ color: 0x71e2ff, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide }));
   shield.position.y = 0.8; shield.visible = false; group.add(shield);
   const missileMarker = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.035, 3, 20, Math.PI * 1.7), new THREE.MeshBasicMaterial({ color: 0xf6a5ff, transparent: true, opacity: 0.7, depthWrite: false }));
@@ -138,5 +132,5 @@ export function createKart(color: number, name: string): KartVisual {
   ctx.fillStyle = '#12273de6'; ctx.beginPath(); ctx.roundRect(0, 4, 512, 84, 24); ctx.fill(); ctx.fillStyle = '#fff6e5'; ctx.fillText(name, 256, 61);
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })); label.position.set(0, 2.5, 0); label.scale.set(2.8, 0.525, 1); group.add(label);
-  return { group, chassis, wheels, steering, turret, cannon, launcher, orbit, missileMarker, shield, boost, contact, label, suspension: newSuspension() };
+  return { group, chassis, wheels, steering, turret,rotary,star, cannon, launcher, orbit, missileMarker, shield, boost, contact, label, suspension: newSuspension() };
 }

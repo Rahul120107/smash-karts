@@ -1,4 +1,4 @@
-import { groundHeight } from './arena.js';
+import { terrainHeight as groundHeight } from './arena.js';
 import { lerp } from './math.js';
 import type { Vec3 } from './types.js';
 

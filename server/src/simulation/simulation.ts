@@ -1,6 +1,7 @@
 import { COLORS, CONFIG, DT } from '../../../shared/src/config.js';
+import { stepBoostPads } from './boost-pads.js';
 import { groundHeight, PICKUP_POSITIONS, SPAWNS } from '../../../shared/src/arena.js';
-import { collideKarts, moveKart, NEUTRAL } from '../../../shared/src/movement.js';
+import { collideKarts, drivingTelemetry,moveKart, NEUTRAL } from '../../../shared/src/movement.js';
 import type { GameEvent, Input, Pickup, PlayerState, Projectile, Snapshot } from '../../../shared/src/types.js';
 import { AttackSequences } from '../weapons/sequences.js';
 import { stepProjectiles } from '../weapons/projectiles.js';
@@ -10,7 +11,10 @@ import { weaponAim } from '../../../shared/src/aim.js';
 import { WEAPONS } from '../../../shared/src/weapons.js';
 import { stepContactAttacks } from '../combat/contact.js';
 import { matchWinners } from '../../../shared/src/match.js';
-import { stepLavaHazard } from './hazards.js';
+import { stepWaterHazard } from './hazards.js';
+import {speedMultiplier} from '../../../shared/src/power-ups.js';
+import {expirePowerUps} from '../weapons/behaviors/power-ups.js';
+import type {GameplayRecorder} from './diagnostics.js';
 
 interface Controls { queue: Input[]; last: Input; lastReceived: number; highest: number; fireDown: boolean; pressed: boolean; firePress: number }
 export class Simulation implements CombatWorld {
@@ -22,9 +26,9 @@ export class Simulation implements CombatWorld {
   private winnerIds: string[] = [];
   private colorCursor = 0;
   private projectileId = 0; private eventId = 0; private controls = new Map<string, Controls>();
-  constructor(public duration: number = CONFIG.matchDuration, public random: () => number = Math.random) { this.resetPickups(); }
+  constructor(public duration: number = CONFIG.matchDuration, public random: () => number = Math.random,public diagnostics?:GameplayRecorder) { this.resetPickups(); }
   nextProjectileId() { return ++this.projectileId; }
-  emit(event: Omit<GameEvent, 'id' | 'at'>) { const id=++this.eventId; this.events.push({ ...event, id, at: this.time, matchId:this.matchId, matchEventId:`${this.matchId}:${id}` }); }
+  emit(event: Omit<GameEvent, 'id' | 'at'>) { const id=++this.eventId; this.events.push({ ...event, id, at: this.time, matchId:this.matchId, matchEventId:`${this.matchId}:${id}` });this.diagnostics?.record(this.time,'event',{...event,id,matchId:this.matchId}); }
   private resetPickups() { this.pickups = PICKUP_POSITIONS.map((p, id) => ({ ...p, id, active: true, availableAt: 0 })); }
   addPlayer(id: string, name: string): PlayerState {
     const usedColors = new Set([...this.players.values()].map(player => player.color));
@@ -36,7 +40,7 @@ export class Simulation implements CombatWorld {
     this.players.set(id, p); this.controls.set(id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0, fireDown: false, pressed: false, firePress: 0 });
     this.spawn(p, this.phase === 'playing' ? undefined : this.players.size - 1); return p;
   }
-  removePlayer(id: string) { const player = this.players.get(id); if (player) this.attacks.cancel(player); this.players.delete(id); this.controls.delete(id); for (const [key, p] of this.projectiles) if (p.owner === id) this.projectiles.delete(key); }
+  removePlayer(id: string) { const player = this.players.get(id); if (player) this.attacks.cancel(player); this.players.delete(id); this.controls.delete(id); }
   private spawn(p: PlayerState, preferred?: number) {
     const alive = [...this.players.values()].filter(k => k.id !== p.id && k.health > 0);
     const spawn = preferred !== undefined ? SPAWNS[preferred % SPAWNS.length]! : [...SPAWNS].sort((a, b) => {
@@ -46,6 +50,7 @@ export class Simulation implements CombatWorld {
     Object.assign(p, spawn, { y: groundHeight(spawn.x, spawn.z), vx: 0, vy: 0, vz: 0, health: CONFIG.maxHealth, respawnAt: 0,
       weapon: null, ammo: 0, nextFire: 0, invulnerableUntil: this.time + CONFIG.spawnProtection, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, aimTarget: null, attacking: false, yawRate: 0 });
     this.attacks.cancel(p);
+    p.weaponPhase='IDLE';
     const c = this.controls.get(p.id)!; c.queue = []; c.last = { ...NEUTRAL }; c.lastReceived = -1;
   }
   start() {
@@ -85,7 +90,9 @@ export class Simulation implements CombatWorld {
       }
       const input = this.time - c.lastReceived <= CONFIG.inputTimeout ? c.last : NEUTRAL;
       if (p.health <= 0) { this.attacks.cancel(p); if (this.time >= p.respawnAt) { this.spawn(p); this.emit({ kind: 'respawn', player: p.id, x: p.x, y: p.y + 0.3, z: p.z }); } continue; }
-      const wallImpact = moveKart(p, input, this.time < p.boostUntil);
+      expirePowerUps(this,p);
+      const wallImpact = moveKart(p, input, speedMultiplier(p,this.time));
+      if(this.diagnostics&&this.tick%2===0)this.diagnostics.record(this.time,'vehicle',{player:p.id,...drivingTelemetry(p),x:p.x,y:p.y,z:p.z,yaw:p.yaw,yawRate:p.yawRate,steeringInput:input.steer,steeringAngle:input.steer*(CONFIG.lowSpeedSteerAngle+(CONFIG.highSpeedSteerAngle-CONFIG.lowSpeedSteerAngle)*Math.min(1,Math.hypot(p.vx,p.vz)/CONFIG.maxSpeed)),charge:p.chargeRatio,phase:p.weaponPhase,target:p.aimTarget});
       if (wallImpact > 4) this.emit({ kind: 'collision', player: p.id, x: p.x, y: p.y + 0.4, z: p.z, radius: wallImpact });
     }
     const alive = [...this.players.values()].filter(p => p.health > 0);
@@ -93,7 +100,7 @@ export class Simulation implements CombatWorld {
       const a = alive[i]!, b = alive[j]!, impact = collideKarts(a, b);
       if (pass === 0 && impact > 4) this.emit({ kind: 'collision', player: a.id, target: b.id, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 0.4, z: (a.z + b.z) / 2, radius: impact });
     }
-    stepLavaHazard(this);
+    stepWaterHazard(this); stepBoostPads(this);
     // Aim uses every kart's current tick position, after movement/contact resolution.
     for (const p of alive.filter(k => k.health > 0)) {
       p.aimTarget = p.weapon && WEAPONS[p.weapon].aimAssist ? weaponAim(p, alive, this.time, p.weapon).target?.id ?? null : null;

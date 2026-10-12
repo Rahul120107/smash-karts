@@ -59,7 +59,7 @@ export class GameAudio {
     if (event.kind === 'collision') { if (now - this.collisionAt < 0.12) return; this.collisionAt = now; }
     const explosive = event.kind === 'explosion' || event.kind === 'elimination';
     const orbitImpact = event.kind === 'hit' && event.weapon === 'orbit';
-    const firing = orbitImpact ? {wave:'triangle' as const,from:160,to:38,duration:.2,volume:.4,noiseHz:2300} : event.kind === 'fire' && event.weapon ? FIRING_SOUNDS[event.weapon] : event.kind === 'shield' ? FIRING_SOUNDS.shield : event.kind === 'boost' ? FIRING_SOUNDS.boost : null;
+    const firing = event.kind==='weaponExpired'?{wave:'sine' as const,from:620,to:210,duration:.18,volume:.14}:orbitImpact ? {wave:'triangle' as const,from:160,to:38,duration:.2,volume:.4,noiseHz:2300} : event.kind === 'fire' && event.weapon ? FIRING_SOUNDS[event.weapon] : event.kind === 'shield' ? FIRING_SOUNDS.shield : event.kind === 'boost' ? FIRING_SOUNDS.boost : null;
     const chime = ['pickup', 'shield', 'boost', 'respawn'].includes(event.kind);
     const duration = firing?.duration ?? (explosive ? 0.4 : chime ? 0.24 : 0.085);
     const gain = ctx.createGain(); gain.connect(this.master);

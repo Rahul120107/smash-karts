@@ -7,7 +7,7 @@ export function eliminationNotice(event: GameEvent, self: string): { message: st
   if(event.kind!=='elimination')return null;
   const killer=event.killerId??event.player,victim=event.victimId??event.target;
   const weapon=event.weaponName??'Unknown weapon';
-  if(victim===self)return {death:true,message:killer==='environment'?'You fell into the lava!':`You were smashed by ${sanitizeName(event.killerName??'Player')} using ${weapon}!`};
+  if(victim===self)return {death:true,message:killer==='environment'?'You fell into the water!':`You were smashed by ${sanitizeName(event.killerName??'Player')} using ${weapon}!`};
   if(killer===self && victim!==self)return {death:false,message:`You smashed ${sanitizeName(event.victimName??'Player')} using ${weapon}!`};
   return null;
 }

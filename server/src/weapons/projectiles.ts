@@ -1,7 +1,7 @@
 import { CONFIG, DT } from '../../../shared/src/config.js';
-import { groundHeight } from '../../../shared/src/arena.js';
+import { terrainHeight as groundHeight } from '../../../shared/src/arena.js';
 import { clamp, distance, lerp, segmentSphere } from '../../../shared/src/math.js';
-import type { Projectile, Vec3 } from '../../../shared/src/types.js';
+import type { PlayerState,Projectile, Vec3 } from '../../../shared/src/types.js';
 import { WEAPONS } from '../../../shared/src/weapons.js';
 import { damage, explode } from '../combat/damage.js';
 import { terrainHit, wallHit, wallContact } from '../collisions/projectile.js';
@@ -51,6 +51,7 @@ function stepBomb(world: CombatWorld, p: Projectile): void {
     const old = { x: p.x, y: p.y, z: p.z };
     const next = ballisticPosition(p, remaining, CONFIG.gravity);
     let contact = wallContact(old, next, p.radius);
+    let victim:PlayerState|undefined;
     const terrain = terrainHit(old, next, p.radius);
     if (terrain !== null && (!contact || terrain < contact.time)) {
       const normal = terrainNormal(lerp(old.x, next.x, terrain), lerp(old.z, next.z, terrain));
@@ -63,10 +64,11 @@ function stepBomb(world: CombatWorld, p: Projectile): void {
       if (time === null || contact && time >= contact.time) continue;
       const dx = lerp(old.x, next.x, time) - center.x, dy = lerp(old.y, next.y, time) - center.y, dz = lerp(old.z, next.z, time) - center.z;
       const length = Math.hypot(dx, dy, dz) || 1, normal = { x: dx / length, y: dy / length, z: dz / length };
-      if (p.vx * normal.x + p.vy * normal.y + p.vz * normal.z < 0) contact = { time, normal };
+      contact = { time, normal };victim=kart;
     }
     if (!contact) { Object.assign(p, next); p.vy -= CONFIG.gravity * remaining; break; }
     hitPosition(p, old, next, contact.time);
+    if(victim){explode(world,p,victim.id);world.projectiles.delete(p.id);return;}
     p.vy -= CONFIG.gravity * remaining * contact.time;
     const n = contact.normal;
     p.x += n.x * 0.0001; p.y += n.y * 0.0001; p.z += n.z * 0.0001;
@@ -87,16 +89,21 @@ export function stepProjectiles(world: CombatWorld): void {
   for (const p of world.projectiles.values()) {
     if (world.time >= p.expires) {
       if(p.blockedAtSpawn)world.emit({kind:'impact',player:p.owner,weapon:p.weapon,x:p.x,y:p.y,z:p.z});
-      if (p.blast > 0 && p.kind !== 'mine') explode(world, p);
+      if (p.blast > 0 && p.kind !== 'mine'&&p.kind!=='fakeBox') explode(world, p);
       world.projectiles.delete(p.id); continue;
     }
-    if (p.kind === 'mine') {
+    if (p.kind === 'mine'||p.kind==='fakeBox') {
       if (world.time < p.armedAt) continue;
-      const enemy = [...world.players.values()].find(k => k.id !== p.owner && k.health > 0 && distance(p, { x: k.x, y: k.y + 0.6, z: k.z }) < 2 && clearShot(p, { x: k.x, y: k.y + .6, z: k.z }, 0));
-      if (enemy) { explode(world, p); world.projectiles.delete(p.id); }
+      const trap=WEAPONS[p.weapon??(p.kind==='fakeBox'?'fakeLootBox':'mine')];
+      const enemy = [...world.players.values()].find(k => k.id !== p.owner && k.health > 0 && distance(p, { x: k.x, y: k.y + 0.6, z: k.z }) < trap.triggerRadius! && clearShot(p, { x: k.x, y: k.y + .6, z: k.z }, 0));
+      if (enemy) { explode(world, p,enemy.id); world.projectiles.delete(p.id); }
       continue;
     }
-    if (p.kind === 'bomb') { stepBomb(world, p); continue; }
+    if (p.kind === 'bomb') {
+      stepBomb(world, p);
+      if(world.projectiles.has(p.id)&&world.time>=p.armedAt){const enemy=[...world.players.values()].find(k=>k.id!==p.owner&&k.health>0&&distance(p,{x:k.x,y:k.y+.65,z:k.z})<WEAPONS.bomb.triggerRadius!&&clearShot(p,{x:k.x,y:k.y+.65,z:k.z},0));if(enemy){explode(world,p);world.projectiles.delete(p.id);}}
+      continue;
+    }
     if (p.kind === 'homing') steerHoming(world, p);
     const old = { x: p.x, y: p.y, z: p.z };
     const next = ballisticPosition(p, DT, p.kind === 'cannonball' ? CONFIG.gravity : 0);
@@ -119,9 +126,9 @@ export function stepProjectiles(world: CombatWorld): void {
     }
     if (hit !== null) {
       hitPosition(p, old, next, clamp(hit - .00001, 0, 1));
-      if (p.blast > 0) explode(world, p);
+      if (p.blast > 0) explode(world, p,victim??undefined);
       else {
-        if (victim) damage(world, world.players.get(victim)!, p.damage, p.owner, p.weapon, p.ownerName);
+        if (victim) {const falloff=p.weapon?WEAPONS[p.weapon].falloff:undefined,d=p.origin?distance(p.origin,p):p.travelled??0,factor=falloff?1-(1-falloff.minimum)*clamp((d-falloff.start)/(falloff.end-falloff.start),0,1):1;damage(world, world.players.get(victim)!, p.damage*factor, p.owner, p.weapon, p.ownerName);}
         world.emit({ kind: 'impact', player: p.owner, weapon: p.weapon, x: p.x, y: p.y, z: p.z });
       }
       world.projectiles.delete(p.id);

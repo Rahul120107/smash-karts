@@ -17,6 +17,7 @@ export function collectPickups(world: CombatWorld): void {
       if (Math.hypot(player.x - box.x, player.z - box.z) > 1.6) continue;
       const id = WEAPON_IDS[Math.min(WEAPON_IDS.length - 1, Math.floor(world.random() * WEAPON_IDS.length))]!;
       player.weapon = id; player.ammo = WEAPONS[id].ammo; player.nextFire = world.time + 0.12;
+      player.weaponPhase='EQUIPPED';player.chargeRatio=0;player.chargeStartedAt=undefined;
       box.active = false; box.availableAt = world.time + CONFIG.pickupDelay;
       world.emit({ kind: 'pickup', pickupId: box.id, player: player.id, weapon: id, x: box.x, y: box.y + 0.8, z: box.z });
       break; // Collection and ownership happen atomically in a single simulation tick.

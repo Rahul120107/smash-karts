@@ -57,6 +57,7 @@ try {
   }), 50);
   const equipped = await wait(() => state(host, s => !!s.players.find(p => p.id === welcome.id)?.weapon), 'authoritative pickup');
   const ammo = equipped.players.find(p => p.id === welcome.id).ammo; host.fire = true; host.firePress++;
+  await delay(150);host.fire=false;
   await wait(() => state(host, s => s.players.find(p => p.id === welcome.id)?.ammo < ammo), 'weapon activation');
   await Promise.all(peers.map(peer => wait(() => state(peer, s => s.tick >= 150 && s.players.every(p => p.ack >= 60)), 'eight concurrent input streams')));
   const reference = host.messages.find(m => m.type === 'snapshot' && m.state.tick >= 150).state;

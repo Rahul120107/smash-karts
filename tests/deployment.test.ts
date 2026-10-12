@@ -41,6 +41,6 @@ describe('follow camera wall protection', () => {
     expect(clear({ x: 21, y: .8, z: 14 }, { x: 27, y: 1, z: 14 }).x).toBeLessThan(23.1);
   });
   it('allows an unobstructed follow camera', () => {
-    const desired = { x: -12, y: 6.1, z: 18 }; expect(clear({ x: -12, y: 1.2, z: 27 }, desired)).toEqual(desired);
+    const desired = { x: 60, y: 6.1, z: 18 }; expect(clear({ x: 60, y: 1.2, z: 27 }, desired)).toEqual(desired);
   });
 });

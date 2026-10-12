@@ -1,13 +1,13 @@
-import { WALLS } from './arena.js';
+import { wallsAlong } from './arena.js';
 import { angleDelta, clamp, distance } from './math.js';
 import type { PlayerState, Vec3, WeaponId } from './types.js';
 import { wallSegment } from './wall-collision.js';
 import { WEAPONS } from './weapons.js';
 import { terrainHit } from './terrain-collision.js';
-import { weaponMuzzle, weaponPivot } from './weapon-physics.js';
+import { launchDirection, weaponMuzzle, weaponPivot } from './weapon-physics.js';
 
 export function clearShot(a: Vec3, b: Vec3, radius = WEAPONS.machineGun.radius): boolean {
-  for (const w of WALLS) if (wallSegment(a, b, w, radius)) return false;
+  for (const w of wallsAlong(a,b,radius)) if (wallSegment(a, b, w, radius)) return false;
   return terrainHit(a, b, radius) === null;
 }
 
@@ -24,6 +24,7 @@ export function interceptTime(relative: Vec3, velocity: Vec3, speed: number): nu
 
 export function weaponAim(shooter: PlayerState, players: Iterable<PlayerState>, now = 0, weapon: WeaponId = 'machineGun') {
   const definition = WEAPONS[weapon], settings = definition.aimAssist!;
+  if(!settings)return {target:null,point:null,direction:launchDirection(shooter.yaw)};
   const origin = weaponPivot(shooter, weapon);
   let target: PlayerState | null = null, point: Vec3 | null = null, best = Infinity;
   for (const candidate of players) {

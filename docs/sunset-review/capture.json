@@ -1,0 +1,17 @@
+{
+  "captured": "2026-10-12T18:45:04.865Z",
+  "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x0000A7A1) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "errors": [],
+  "views": [
+    "top",
+    "overview",
+    "road-turn",
+    "bridge",
+    "tunnel",
+    "waterfall-side",
+    "boost-pad",
+    "boost-active"
+  ],
+  "reference": "Image unavailable; written descriptions used. No image comparison claimed.",
+  "note": "Overview uses shipped map builders and lighting; gameplay panels use the built React game and authoritative server. Boost-active was triggered by keyboard driving."
+}

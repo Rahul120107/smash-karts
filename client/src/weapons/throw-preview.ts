@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { CONFIG } from '../../../shared/src/config.js';
 import { WEAPONS } from '../../../shared/src/weapons.js';
-import type { KartState } from '../../../shared/src/types.js';
-import { ballisticPosition, launchDirection, weaponMuzzle } from '../../../shared/src/weapon-physics.js';
+import type { KartState,WeaponId } from '../../../shared/src/types.js';
+import { ballisticPosition, launchDirection, launchProfile,weaponMuzzle } from '../../../shared/src/weapon-physics.js';
 import { clearShot } from '../../../shared/src/aim.js';
 
 /** First impact preview, using the server's gravity and inherited launch velocity. */
@@ -16,13 +16,13 @@ export class ThrowPreview {
     this.group.add(new THREE.Line(this.geometry,new THREE.LineBasicMaterial({color:0xb5ffdb,transparent:true,opacity:.7})),this.marker);
     this.marker.rotation.x=Math.PI/2;this.group.visible=false;
   }
-  update(kart: KartState, active: boolean) {
+  update(kart: KartState, active: boolean,weapon:WeaponId='bomb',charge=0) {
     this.group.visible=active;if(!active)return;
-    const w=WEAPONS.bomb, start=weaponMuzzle(kart,'bomb',launchDirection(kart.yaw,Math.atan2(w.launchVelocityY!,w.speed)));
-    const initial={...start,vx:Math.sin(kart.yaw)*w.speed+kart.vx*w.inheritedVelocity!,vz:Math.cos(kart.yaw)*w.speed+kart.vz*w.inheritedVelocity!,vy:w.launchVelocityY!+kart.vy*w.inheritedVelocity!};
+    const w=WEAPONS[weapon],profile=launchProfile(weapon,charge), start=weaponMuzzle(kart,weapon,launchDirection(kart.yaw,profile.elevation));
+    const initial={...start,vx:Math.sin(kart.yaw)*profile.speed+kart.vx*(w.inheritedVelocity??0),vz:Math.cos(kart.yaw)*profile.speed+kart.vz*(w.inheritedVelocity??0),vy:profile.vertical+kart.vy*(w.inheritedVelocity??0)};
     let previous=start,count=0;
     for(let i=0;i<48;i++) {
-      const next=ballisticPosition(initial,i*.04,CONFIG.gravity);
+      const next=ballisticPosition(initial,i*.06,CONFIG.gravity);
       if(i && !clearShot(previous,next,w.radius)) {
         let lo=0,hi=1;
         for(let j=0;j<8;j++){const t=(lo+hi)/2,p={x:previous.x+(next.x-previous.x)*t,y:previous.y+(next.y-previous.y)*t,z:previous.z+(next.z-previous.z)*t};if(clearShot(previous,p,w.radius))lo=t;else hi=t;}

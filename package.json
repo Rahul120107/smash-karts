@@ -22,6 +22,7 @@
     "test:production": "node scripts/production-smoke.mjs",
     "check": "npm run build && npm test && npm run test:browser && npm run test:production",
     "benchmark": "tsx scripts/benchmark.ts",
+    "calibrate:mechanics": "tsx scripts/calibrate-mechanics.ts",
     "review:visuals": "tsx scripts/capture-map.ts --visual-upgrade",
     "profile:rendering": "tsx scripts/profile-rendering.ts"
   },

@@ -1,5 +1,6 @@
-export type WeaponId = 'machineGun' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'shield' | 'boost' | 'scatter' | 'cannon' | 'bullets' | 'blastMissile' | 'orbit';
-export type ProjectileKind = 'bullet' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'pellet' | 'cannonball' | 'slug' | 'blastMissile';
+export type WeaponId = 'machineGun' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'shield' | 'boost' | 'scatter' | 'cannon' | 'bullets' | 'blastMissile' | 'orbit' | 'fakeLootBox';
+export type ProjectileKind = 'bullet' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'pellet' | 'cannonball' | 'slug' | 'blastMissile' | 'fakeBox';
+export type WeaponPhase = 'IDLE' | 'EQUIPPED' | 'AIMING' | 'CHARGING' | 'FIRING' | 'COOLDOWN' | 'EXPIRED';
 export interface Vec3 { x: number; y: number; z: number }
 export interface Input { seq: number; throttle: number; steer: number; fire: boolean; drift: boolean; firePress?: number; fireHeld?: boolean }
 export interface KartState extends Vec3 { yaw: number; vx: number; vz: number; vy: number; yawRate?: number }
@@ -11,6 +12,9 @@ export interface PlayerState extends KartState {
   attacking?: boolean;
   orbitUntil?: number;
   charging?: boolean;
+  chargeStartedAt?: number;
+  chargeRatio?: number;
+  weaponPhase?: WeaponPhase;
 }
 export interface Projectile extends Vec3 {
   id: number; kind: ProjectileKind; owner: string; vx: number; vy: number; vz: number;
@@ -21,7 +25,7 @@ export interface Projectile extends Vec3 {
   blockedAtSpawn?: boolean;
 }
 export interface Pickup extends Vec3 { id: number; active: boolean; availableAt: number }
-export type EffectKind = 'fire' | 'explosion' | 'hit' | 'pickup' | 'pickupSpawn' | 'shield' | 'shieldImpact' | 'boost' | 'elimination' | 'impact' | 'collision' | 'respawn';
+export type EffectKind = 'fire' | 'explosion' | 'hit' | 'pickup' | 'pickupSpawn' | 'shield' | 'shieldImpact' | 'boost' | 'elimination' | 'impact' | 'collision' | 'respawn' | 'weaponExpired';
 export interface GameEvent extends Vec3 { id: number; kind: EffectKind; at: number; player: string; weapon?: WeaponId; radius?: number; target?: string; pickupId?: number; yaw?: number;
   killerId?: string; killerName?: string; victimId?: string; victimName?: string; weaponName?: string; matchId?: number; matchEventId?: string;
 }

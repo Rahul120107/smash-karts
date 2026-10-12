@@ -14,4 +14,5 @@ export const FIRING_SOUNDS: Record<WeaponId, FiringSound> = {
   orbit: { wave: 'triangle', from: 330, to: 880, duration: .3, volume: .26 },
   boost: { wave: 'sawtooth', from: 110, to: 320, duration: .3, volume: .24 },
   scatter: { wave: 'square', from: 260, to: 80, duration: .19, volume: .3, noiseHz: 1800 },
+  fakeLootBox:{wave:'triangle',from:310,to:190,duration:.2,volume:.22,noiseHz:450},
 };

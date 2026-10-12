@@ -5,8 +5,8 @@ import type { WeaponId } from '../shared/src/types.js';
 export function duel() {
   const world = new Simulation(180, () => 0);
   const a = world.addPlayer('a', 'Alpha'), b = world.addPlayer('b', 'Bravo'); world.start();
-  Object.assign(a, { x: -12, y: 0, z: 0, yaw: 0, invulnerableUntil: 0 });
-  Object.assign(b, { x: -12, y: 0, z: 8, yaw: Math.PI, invulnerableUntil: 0 });
+  Object.assign(a, { x: 60, y: 0, z: 0, yaw: 0, invulnerableUntil: 0 });
+  Object.assign(b, { x: 60, y: 0, z: 8, yaw: Math.PI, invulnerableUntil: 0 });
   return { world, a, b };
 }
 export function equip(player: ReturnType<typeof duel>['a'], id: WeaponId) { player.weapon = id; player.ammo = WEAPONS[id].ammo; player.nextFire = 0; }

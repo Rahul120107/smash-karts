@@ -1,11 +1,11 @@
-import { WALLS } from '../../../shared/src/arena.js';
+import { wallsAlong } from '../../../shared/src/arena.js';
 export { terrainHit } from '../../../shared/src/terrain-collision.js';
 import { wallSegment } from '../../../shared/src/wall-collision.js';
 import type { Vec3 } from '../../../shared/src/types.js';
 
 export function wallHit(a: Vec3, b: Vec3, radius = 0): number | null {
   let first: number | null = null;
-  for (const w of WALLS) {
+  for (const w of wallsAlong(a,b,radius)) {
     const t = wallSegment(a, b, w, radius)?.time ?? null;
     if (t !== null && (first === null || t < first)) first = t;
   }
@@ -14,7 +14,7 @@ export function wallHit(a: Vec3, b: Vec3, radius = 0): number | null {
 /** Contact normal is needed for lobbed explosives to bounce off the struck face. */
 export function wallContact(a: Vec3, b: Vec3, radius: number): { time: number; normal: Vec3 } | null {
   let first: { time: number; normal: Vec3 } | null = null;
-  for (const w of WALLS) {
+  for (const w of wallsAlong(a,b,radius)) {
     const contact = wallSegment(a, b, w, radius);
     if (!contact || first && contact.time >= first.time) continue;
     const { time, normal } = contact;

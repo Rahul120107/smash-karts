@@ -1,99 +1,56 @@
 import * as THREE from 'three';
-import { ARENA_SIZE, CORNER_RADIUS, CROSSINGS, LAVA, rampProfile, rampHalfWidth, RAMPS, WALLS, TUNNELS, toWorld } from '../../../shared/src/arena.js';
+import { ARENA_SIZE,CORNER_RADIUS,ROADS,WALLS,BRIDGES,BOOST_PADS,earthHeight,groundHeight,toWorld } from '../../../shared/src/arena.js';
 import { batchStatic } from '../game/batch.js';
-function block(group: THREE.Group, size: [number, number, number], pos: [number, number, number], material: THREE.Material) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material); mesh.position.set(...pos); mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh); return mesh;
+import { rockTextures } from './surface-textures.js';
+
+export function stoneTexture(){
+  const pixels=new Uint8Array(128*128*4);
+  for(let y=0;y<128;y++)for(let x=0;x<128;x++){
+    const row=Math.floor(y/16),column=Math.floor((x+(row%2)*16)/32),seam=y%16<1||(x+(row%2)*16)%32<1;
+    const grain=(Math.imul(x+Math.imul(y,131),1597334677)>>>24)%14,shade=seam?92:174+(Math.imul(row*19+column*7,137)>>>2)%30+grain;
+    pixels.set([shade,Math.min(255,shade+3),Math.max(0,shade-7),255],(y*128+x)*4);
+  }
+  const texture=new THREE.DataTexture(pixels,128,128);texture.colorSpace=THREE.SRGBColorSpace;texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(.28,.28);texture.generateMipmaps=true;texture.minFilter=THREE.LinearMipmapLinearFilter;texture.magFilter=THREE.LinearFilter;texture.needsUpdate=true;return texture;
 }
-export function floorOutline() {
-  const h = ARENA_SIZE / 2, r = CORNER_RADIUS, s = new THREE.Shape();
-  s.moveTo(-h + r, -h); s.lineTo(h - r, -h); s.absarc(h-r, -h+r, r, -Math.PI/2, 0, false);
-  s.lineTo(h, h-r); s.absarc(h-r, h-r, r, 0, Math.PI/2, false);
-  s.lineTo(-h+r, h); s.absarc(-h+r, h-r, r, Math.PI/2, Math.PI, false);
-  s.lineTo(-h, -h+r); s.absarc(-h+r, -h+r, r, Math.PI, Math.PI*1.5, false); s.closePath();
-  const hole = new THREE.Path(); const w = LAVA.width / 2, d = LAVA.depth / 2;
-  hole.moveTo(-w,-d); hole.lineTo(-w,d); hole.lineTo(w,d); hole.lineTo(w,-d); hole.closePath(); s.holes.push(hole); return s;
+export function floorOutline(){const h=ARENA_SIZE/2,r=CORNER_RADIUS,s=new THREE.Shape();s.moveTo(-h+r,-h);s.lineTo(h-r,-h);s.absarc(h-r,-h+r,r,-Math.PI/2,0);s.lineTo(h,h-r);s.absarc(h-r,h-r,r,0,Math.PI/2);s.lineTo(-h+r,h);s.absarc(-h+r,h-r,r,Math.PI/2,Math.PI);s.lineTo(-h,-h+r);s.absarc(-h+r,-h+r,r,Math.PI,Math.PI*1.5);s.closePath();return s;}
+export function roadGeometry(){const p:number[]=[],uv:number[]=[];for(const road of ROADS)for(const t of road.triangles)for(const v of [t.a,t.b,t.c]){p.push(v.x,v.y,v.z);uv.push(v.x,v.z);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.computeVertexNormals();return g;}
+export function terrainGeometry(){
+  const p:number[]=[],uv:number[]=[],colors:number[]=[],indices:number[]=[],h=ARENA_SIZE/2,n=ARENA_SIZE/2;
+  for(let z=0;z<=n;z++)for(let x=0;x<=n;x++){const wx=-h+x*2,wz=-h+z*2,y=earthHeight(wx,wz);p.push(wx,y,wz);uv.push(wx*.06,wz*.06);const tint=new THREE.Color(y<-.2?0x8c9273:0x758850).multiplyScalar(.92+.08*Math.sin(wx*.21)*Math.cos(wz*.17));colors.push(tint.r,tint.g,tint.b);}
+  for(let z=0;z<n;z++)for(let x=0;x<n;x++){const wx=-h+x*2,wz=-h+z*2,dx=Math.max(0,Math.abs(wx+1)-(h-CORNER_RADIUS)),dz=Math.max(0,Math.abs(wz+1)-(h-CORNER_RADIUS));if(Math.hypot(dx,dz)>CORNER_RADIUS)continue;const a=z*(n+1)+x,b=a+1,c=a+n+1,d=c+1;indices.push(a,c,b,b,c,d);}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));g.setIndex(indices);g.computeVertexNormals();return g;
 }
-/** All obstacle meshes come from the authoritative boxes and ramp profiles. */
-export function buildArena(): THREE.Group {
-  const group = new THREE.Group(); group.name = 'crossfire-island';
-  const grain = new Uint8Array(64 * 64 * 4);
-  for (let i = 0; i < 64 * 64; i++) {
-    const x = i % 64, y = Math.floor(i / 64);
-    const seam = x === 0 || y === 0 ? 25 : 0;
-    const value = 224 + ((Math.imul(i + 7, 1597334677) >>> 24) % 28) - seam;
-    grain.set([value,value,value,255], i * 4);
+export function buildArena(){
+  const group=new THREE.Group();group.name='emberfall-island';
+  const stone=new THREE.MeshStandardMaterial({color:0xb6af9d,map:stoneTexture(),roughness:.91,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2});
+  const rock=new THREE.MeshStandardMaterial({color:0x8a8679,roughness:.93,...rockTextures(),normalScale:new THREE.Vector2(.35,.35)});
+  const wood=new THREE.MeshStandardMaterial({color:0x86542f,roughness:.85}),dark=new THREE.MeshStandardMaterial({color:0x453f35,roughness:.75}),moss=new THREE.MeshStandardMaterial({color:0x697849,roughness:.94});
+  const glow=new THREE.MeshStandardMaterial({color:0xffd891,emissive:0xffb04a,emissiveIntensity:1.2,roughness:.5});
+  const ground=new THREE.Mesh(terrainGeometry(),new THREE.MeshStandardMaterial({vertexColors:true,roughness:1}));ground.name='shared-island-terrain';ground.receiveShadow=true;group.add(ground);
+  const road=new THREE.Mesh(roadGeometry(),stone);road.name='stone-road-network';road.receiveShadow=true;group.add(road);
+  const box=(size:[number,number,number],at:[number,number,number],material:THREE.Material,yaw=0,shadow=false)=>{
+    const geometry=material===rock?new THREE.BoxGeometry(...size,3,3,3):new THREE.BoxGeometry(...size);
+    if(material===rock){const p=geometry.getAttribute('position');for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),edge=Math.abs(x)>size[0]*.49&&Math.abs(z)>size[2]*.49;
+      // A small bevel stays inside the shared contact envelope; roof undersides stay planar.
+      const inset=edge?Math.min(.12,Math.min(size[0],size[2])*.08):0;p.setXYZ(i,x-Math.sign(x)*inset,y,z-Math.sign(z)*inset);}
+      geometry.computeVertexNormals();}
+    const m=new THREE.Mesh(geometry,material);m.position.set(...at);m.rotation.y=yaw;m.castShadow=shadow;m.receiveShadow=true;group.add(m);return m;};
+  for(const w of WALLS){
+    if(w.style==='tree')continue;
+    const material=w.style==='rail'||w.style==='boundary'?wood:rock;
+    const block=box([w.width,w.height,w.depth],[w.x,(w.base??0)+w.height/2,w.z],material,w.yaw??0,w.style==='tunnel');block.userData.collider=w;
+    if(w.style==='rail'||w.style==='boundary'){
+      const longX=w.width>w.depth,length=longX?w.width:w.depth;
+      for(let d=-length/2;d<=length/2;d+=4){const at=toWorld(longX?d:0,longX?0:d,w);box([.25,w.height+.1,.25],[at.x,(w.base??0)+(w.height+.1)/2,at.z],dark,w.yaw??0);}
+    }else if(w.style==='rock'&&!(w.base??0))box([w.width*.9,.07,w.depth*.9],[w.x,w.height+.035,w.z],moss,w.yaw??0);
   }
-  const asphalt = new THREE.DataTexture(grain,64,64); asphalt.colorSpace=THREE.SRGBColorSpace;
-  asphalt.wrapS=asphalt.wrapT=THREE.RepeatWrapping; asphalt.magFilter=THREE.LinearFilter; asphalt.minFilter=THREE.LinearMipmapLinearFilter;
-  asphalt.generateMipmaps=true; asphalt.repeat.set(.6,.6); asphalt.needsUpdate=true;
-  const road = new THREE.MeshStandardMaterial({ color: 0x465d70, map: asphalt, roughness: .72, metalness: .09 });
-  const white = new THREE.MeshStandardMaterial({ color: 0xf7f7ef, roughness: .9 });
-  const red = new THREE.MeshStandardMaterial({ color: 0xf34448, roughness: .86 });
-  const pit = new THREE.MeshStandardMaterial({ color: 0x512334, roughness: 1 });
-  const green = new THREE.MeshStandardMaterial({ color: 0x37b77a, roughness: .88 });
-  const rail = new THREE.MeshStandardMaterial({ color: 0xd0e7e6, roughness: .4, metalness: .25 });
-  const luminous = new THREE.MeshStandardMaterial({ color: 0xa5fff0, emissive: 0x39dcca, emissiveIntensity: .9, roughness: .42 });
-  const materials = new Map<number, THREE.MeshStandardMaterial>();
-  const colored = (color: number) => { let m = materials.get(color); if (!m) { m = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0x678798), .22), roughness: .5, metalness: .25 }); materials.set(color, m); } return m; };
-  const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(floorOutline(), { depth: 2, bevelEnabled: false, curveSegments: 12 }), road);
-  slab.rotation.x = -Math.PI / 2; slab.position.y = -2; slab.receiveShadow = true; group.add(slab);
-  block(group,[LAVA.width,.1,LAVA.depth],[0,LAVA.bottom-.05,0],pit).castShadow = false;
-  // Shared, traversable 12 cm rim; alternating segments have no overlapping corners.
-  for (const side of [-1,1]) {
-    for (let i=0;i<10;i++) block(group,[1.84,LAVA.curbHeight,1.2],[-8.28+i*1.84,LAVA.curbHeight/2,side*8.6],i%2?white:red);
-    for (let i=0;i<10;i++) block(group,[1.2,LAVA.curbHeight,1.6],[side*8.6,LAVA.curbHeight/2,-7.2+i*1.6],i%2?red:white);
+  // Lantern housings use emissive faces rather than additional shadow lights.
+  for(const bridge of BRIDGES)for(const x of [-20,24])for(const side of [-1,1]){const z=bridge.z+side*5.5;box([.2,1.8,.2],[x,bridge.height+.9,z],dark);box([.42,.55,.42],[x,bridge.height+1.8,z],glow);box([.55,.12,.55],[x,bridge.height+2.1,z],dark);}
+  for(const pad of BOOST_PADS){
+    const p:number[]=[],uv:number[]=[];const corners=[[-pad.width/2,-pad.depth/2],[-pad.width/2,pad.depth/2],[pad.width/2,-pad.depth/2],[pad.width/2,pad.depth/2]];
+    for(const i of [0,1,2,2,1,3]){const c=corners[i]!,v=toWorld(c[0]!,c[1]!,pad);p.push(v.x,groundHeight(v.x,v.z)+.015,v.z);uv.push(c[0]!/pad.width+.5,c[1]!/pad.depth+.5);}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.computeVertexNormals();
+    const m=new THREE.Mesh(g,new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec2 vUv;void main(){float edge=step(.04,vUv.x)*step(vUv.x,.96)*step(.06,vUv.y)*step(vUv.y,.94);float arrow=step(abs(vUv.x-.5),.28)*step(.35,fract(vUv.y*3.-abs(vUv.x-.5)*2.));gl_FragColor=vec4(mix(vec3(.09,.25,.19),vec3(.95,.72,.24),max(1.-edge,arrow)),1.);\n#include <colorspace_fragment>\n}'}));m.name='boost-pad-'+pad.id;group.add(m);
   }
-  for (const w of WALLS) {
-    const mesh=block(group,[w.width,w.height,w.depth],[w.x,(w.base??0)+w.height/2,w.z],colored(w.color!));mesh.rotation.y=w.yaw??0;
-    const foot=block(group,[w.width+.02,.08,w.depth+.02],[w.x,(w.base??0)+.04,w.z],w.style==='barrier'?white:green);foot.rotation.y=w.yaw??0;
-    const cap=block(group,[Math.max(.1,w.width-.08),.02,Math.max(.1,w.depth-.08)],[w.x,(w.base??0)+w.height+.008,w.z],rail);cap.rotation.y=w.yaw??0;cap.castShadow=false;
-  }
-  // Narrow luminous strips define the portals; their supports and ceilings above
-  // use the same authoritative boxes as all bullets, explosives and kart contacts.
-  for (const roof of TUNNELS.filter(w => w.height < 1)) for (const end of [-1, 1]) {
-    block(group, [roof.width - .4, .07, .07], [roof.x, roof.base! - .055, roof.z + end * (roof.depth / 2 - .06)], luminous).castShadow = false;
-  }
-  for (const r of RAMPS) {
-    const local=new THREE.Group(),profile=rampProfile(r),vertices:number[]=[];
-    for(let i=1;i<profile.length;i++) {
-      const [az,ya]=profile[i-1]!,[bz,yb]=profile[i]!,za=az-r.z,zb=bz-r.z;if(za===zb)continue;
-      const wa=rampHalfWidth(r,za),wb=rampHalfWidth(r,zb);
-      vertices.push(-wa,ya,za,-wb,yb,zb,wa,ya,za,wa,ya,za,-wb,yb,zb,wb,yb,zb);
-      for(const side of [-1,1])vertices.push(side*wa,0,za,side*wa,ya,za,side*wb,yb,zb,side*wa,0,za,side*wb,yb,zb,side*wb,0,zb);
-    }
-    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.computeVertexNormals();
-    const uvs:number[]=[];for(let i=0;i<vertices.length;i+=3)uvs.push(vertices[i]!,vertices[i+2]!);
-    geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
-    const surface=new THREE.Mesh(geometry,r.color?colored(r.color):road);surface.material.side=THREE.DoubleSide;surface.castShadow=true;surface.receiveShadow=true;local.add(surface);
-    const run=(r.depth-(r.plateau??0))/2,slope=Math.atan2(r.height,run);
-    for(const side of [-1,1]) {
-      const z=side*((r.plateau??0)/2+run*.75),mark=block(local,[rampHalfWidth(r,z)*2-.5,.015,.3],[0,r.height*.25+.013,z],white);mark.rotation.x=side*slope;mark.castShadow=false;
-    }
-    local.position.set(r.x,0,r.z);local.rotation.y=r.yaw??0;group.add(local);
-    if (!r.color) for (const side of [-1, 1]) {
-      const edge = toWorld(side * (r.width / 2 - .65), 0, r);
-      const light = block(group, [.045, .025, r.plateau ?? 1], [edge.x, r.height + .02, edge.z], luminous); light.rotation.y = r.yaw ?? 0; light.castShadow = false;
-    }
-  }
-  for(const crossing of CROSSINGS) {
-    const marks=new THREE.Group();for(let i=0;i<9;i++)block(marks,[.65,.008,crossing.depth],[-4.4+i*1.1,.006,0],white).castShadow=false;
-    marks.position.set(crossing.x,0,crossing.z);marks.rotation.y=crossing.yaw;group.add(marks);
-  }
-  for(const s of [-1,1]) {
-    block(group,[.18,.008,84],[s*53,.006,0],white).castShadow=false;
-    block(group,[84,.008,.18],[0,.006,s*53],white).castShadow=false;
-    block(group,[16,1.2,.02],[0,-.6,s*7.99],pit);block(group,[.02,1.2,16],[s*7.99,-.6,0],pit);
-    // Lane dashes on the outer driving loop, clear of all collision geometry.
-    for(let i=-36;i<=36;i+=6) {
-      block(group,[2,.008,.14],[i,.012,s*49],white).castShadow=false;
-      block(group,[.14,.008,2],[s*49,.012,i],white).castShadow=false;
-    }
-  }
-  // Curved lane guides connect existing perimeter routes without adding obstacles.
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (let i = 0; i < 12; i++) {
-    const a = i * Math.PI / 24 + .03, radius = 11;
-    const mark = block(group, [.12, .008, .65], [sx * (38 + Math.sin(a) * radius), .012, sz * (38 + Math.cos(a) * radius)], white);
-    mark.rotation.y = -sx * sz * a; mark.castShadow = false;
-  }
-  batchStatic(group); return group;
+  batchStatic(group);return group;
 }

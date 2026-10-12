@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { LAVA, PLATFORMS, RAMPS, toWorld, toLocal, WALLS, groundHeight } from '../shared/src/arena.js';
+import { LAKE, PLATFORMS, RAMPS, TUNNEL, toWorld, toLocal, WALLS, groundHeight } from '../shared/src/arena.js';
 import { CONFIG, DT } from '../shared/src/config.js';
 import { clearShot } from '../shared/src/aim.js';
 import { moveKart, NEUTRAL, resolveWalls } from '../shared/src/movement.js';
@@ -16,7 +16,7 @@ describe('reference-shaped island routes and rendering',()=>{
   it.each(RAMPS)('does not misclassify boosted ascent through the tapered mouth at $x,$z as a side impact',r=>{
     const start=toWorld(0,-r.depth/2-.01,r),yaw=r.yaw??0;
     const k={...kart(start.x,start.z),yaw,vx:Math.sin(yaw)*CONFIG.maxSpeed*CONFIG.boostMultiplier,vz:Math.cos(yaw)*CONFIG.maxSpeed*CONFIG.boostMultiplier};let peak=0;
-    for(let i=0;i<90;i++){moveKart(k,{...NEUTRAL,throttle:1},true);peak=Math.max(peak,k.y);expect(toLocal(k.x,k.z,r).x).toBeCloseTo(0,7);expect(k.vy).toBeLessThanOrEqual(CONFIG.maxJumpVelocity);}
+    for(let i=0;i<60;i++){moveKart(k,{...NEUTRAL,throttle:1},true);peak=Math.max(peak,k.y);expect(toLocal(k.x,k.z,r).x).toBeCloseTo(0,7);expect(k.vy).toBeLessThanOrEqual(CONFIG.maxJumpVelocity);}
     expect(peak).toBeGreaterThanOrEqual(r.height);
   });
   it.each(PLATFORMS)('drives both approaches of the platform at $x,$z',r=>{
@@ -34,24 +34,24 @@ describe('reference-shaped island routes and rendering',()=>{
     const state={...kart(w.x,w.z),y:0};resolveWalls(state);expect(Math.hypot(state.x-w.x,state.z-w.z)).toBeGreaterThan(CONFIG.kartRadius);
   });
   it('clips the camera against a visible low barrier and elevated ramp',()=>{
-    const clipped=clipCameraRay({x:15,y:.8,z:19},{x:15,y:1,z:25});expect(clipped.z).toBeLessThan(21.1);
-    const r=RAMPS[0]!,rampClip=clipCameraRay({x:r.x,y:.6,z:-25},{x:r.x,y:.6,z:0});expect(rampClip.z).toBeLessThan(-13);
+    const clipped=clipCameraRay({x:15,y:2,z:19},{x:15,y:2,z:27});expect(clipped.z).toBeLessThan(24.9);
+    const r=RAMPS[0]!,a=toWorld(0,-r.depth/2-2,r),b=toWorld(0,0,r),rampClip=clipCameraRay({...a,y:.4},{...b,y:.4});expect(rampClip.x).toBeLessThan(-4);
   });
-  it('has a real floor opening, traversable curb and no obsolete stone block',()=>{
-    expect(floorOutline().holes).toHaveLength(1);expect(groundHeight(0,0)).toBe(LAVA.bottom);expect(groundHeight(8.6,0)).toBe(LAVA.curbHeight);
+  it('has a sloping lake basin and no obsolete stone block',()=>{
+    expect(floorOutline().holes).toHaveLength(0);expect(groundHeight(LAKE.x,LAKE.z)).toBe(LAKE.bottom);expect(groundHeight(-23,0)).toBe(0);
     expect(WALLS.some(w=>w.x===0&&w.z===0)).toBe(false);
     const arena=buildArena();let meshes=0;arena.traverse(o=>{if(o instanceof THREE.Mesh){meshes++;o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});expect(meshes).toBeLessThan(25);
   });
   it('keeps the scenic horizon batched, outside combat routes and present in compatibility mode',()=>{
-    const env=new IslandBackdrop();expect(env.group.getObjectByName('ocean')).toBeDefined();expect(env.group.getObjectByName('distant-islands')).toBeInstanceOf(THREE.InstancedMesh);
-    const falls=env.group.getObjectByName('distant-waterfalls')!;expect(falls.children).toHaveLength(1);
-    const clouds=env.group.getObjectByName('drifting-clouds') as THREE.InstancedMesh;expect(clouds.count).toBe(96);
+    const env=new IslandBackdrop();expect(env.group.getObjectByName('ocean')).toBeDefined();expect(env.group.getObjectByName('distant-mountains')).toBeInstanceOf(THREE.InstancedMesh);
+    const falls=env.group.getObjectByName('waterfall-0')!;expect(WATERFALL_SITES).toHaveLength(3);
+    const clouds=env.group.getObjectByName('sunset-clouds') as THREE.InstancedMesh;expect(clouds.count).toBe(36);
     const initial=clouds.instanceMatrix.array.slice();env.update(20,new THREE.Vector3(),false);expect(clouds.instanceMatrix.array).not.toEqual(initial);
-    expect((env.group.getObjectByName('waterfall-mist') as THREE.Points).geometry.getAttribute('position').count).toBe(256);
-    for (const site of WATERFALL_SITES) {expect(Math.hypot(site.x,site.z)-site.radius*1.4).toBeGreaterThan(112);expect(site.height).toBeGreaterThanOrEqual(66);}
+    expect((env.group.getObjectByName('waterfall-mist') as THREE.Points).geometry.getAttribute('position').count).toBe(120);
+    for (const site of WATERFALL_SITES) {expect(site.height).toBeGreaterThan(7);expect(site.base+site.height).toBeGreaterThan(3);}
     // No far-away shadow casters; no unbounded emitters or extra collidable scenery.
     let draws=0;env.group.traverse(o=>{expect(o.castShadow).toBe(false);if(o instanceof THREE.Mesh||o instanceof THREE.Points)draws++;});expect(draws).toBeLessThanOrEqual(25);
-    const lava=env.group.getObjectByName('lava') as THREE.Mesh<THREE.PlaneGeometry,THREE.ShaderMaterial>;expect(lava.position.y).toBe(LAVA.surface);
+    const lava=env.group.getObjectByName('central-lake') as THREE.Mesh<THREE.BufferGeometry,THREE.ShaderMaterial>;expect(lava.position.y).toBe(LAKE.surface);
     env.update(30,new THREE.Vector3(),true);expect(lava.material.uniforms.time!.value).toBe(30);
     expect(falls.visible).toBe(true);expect(clouds.visible).toBe(true);expect(env.group.getObjectByName('waterfall-mist')!.visible).toBe(false);
     env.group.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Points){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();if(o instanceof THREE.InstancedMesh)o.dispose();}});

@@ -1,10 +1,12 @@
 import { DT } from '../../../shared/src/config.js';
 import { collideKarts, drivingTelemetry, moveKart, recoverKart, resolveRampSides, resolveWalls } from '../../../shared/src/movement.js';
 import { groundHeight } from '../../../shared/src/arena.js';
+import {speedMultiplier} from '../../../shared/src/power-ups.js';
 import { angleDelta, lerp } from '../../../shared/src/math.js';
 import type { Input, KartState, PlayerState, Snapshot } from '../../../shared/src/types.js';
 
 export class Prediction {
+  constructor(private diagnostic?: (sample:{kind:'correction';tick:number;distance:number;velocityError:number})=>void){}
   kart: KartState | null = null; sequence = 0; private pending: Input[] = [];
   private phase = ''; private tick = -1; private alive = false; private id = '';
   private others: PlayerState[] = []; private snapshotTime = 0;
@@ -19,14 +21,15 @@ export class Prediction {
     this.pending = this.pending.filter(c => c.seq > player.ack);
     const kart = { ...player };
     if (this.alive && state.phase === 'playing') {
-      for (let i = 0; i < this.pending.length; i++) { moveKart(kart, this.pending[i]!, state.time + i * DT < player.boostUntil); this.contacts(kart, i * DT); }
+      for (let i = 0; i < this.pending.length; i++) { moveKart(kart, this.pending[i]!, speedMultiplier(player,state.time+i*DT)); this.contacts(kart, i * DT); }
     }
+    if(this.kart&&this.diagnostic)this.diagnostic({kind:'correction',tick:state.tick,distance:Math.hypot(this.kart.x-kart.x,this.kart.y-kart.y,this.kart.z-kart.z),velocityError:Math.hypot(this.kart.vx-kart.vx,this.kart.vz-kart.vz)});
     this.kart = kart;
   }
   step(command: Input, player: PlayerState, time: number) {
     this.sequence = command.seq;
     this.pending.push(command); if (this.pending.length > 180) this.pending.shift();
-    if (this.kart && player.health > 0) { moveKart(this.kart, command, time < player.boostUntil); this.contacts(this.kart, time - this.snapshotTime); }
+    if (this.kart && player.health > 0) { moveKart(this.kart, command, speedMultiplier(player,time)); this.contacts(this.kart, time - this.snapshotTime); }
   }
   private contacts(kart: KartState, elapsed: number) {
     const t = Math.max(0, Math.min(0.1, elapsed));
@@ -36,7 +39,7 @@ export class Prediction {
       const grounded = drivingTelemetry(other).grounded;
       if (!grounded) ghost.y += ghost.vy * t;
       resolveWalls(ghost); resolveRampSides(ghost);
-      if (grounded) ghost.y = groundHeight(ghost.x, ghost.z);
+      if (grounded) ghost.y = groundHeight(ghost.x, ghost.z, ghost.y);
       recoverKart(ghost); return ghost;
     });
     for (let pass = 0; pass < 3; pass++) for (const other of ghosts) collideKarts(kart, other);

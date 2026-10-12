@@ -38,4 +38,5 @@ const report = JSON.stringify({ simulatedSeconds: world.time, players: world.pla
   estimatedOutboundKBpsPerEightPlayerRoom: Math.round(totalBytes / snapshots * CONFIG.snapshotRate * 8 / 1024),
   totalEliminations: [...world.players.values()].reduce((sum, p) => sum + p.score, 0), phase: world.phase }, null, 2);
 console.log(report);
+if(process.argv.includes('--fidelity'))await writeFile('docs/performance-fidelity-simulation.json',report+'\n');
 if (process.argv.includes('--alien-upgrade') || process.argv.includes('--fantasy-upgrade')) await writeFile((process.argv.includes('--fantasy-upgrade') ? 'docs/performance-fantasy-simulation.json' : 'docs/performance-alien-simulation.json'), report + '\n');

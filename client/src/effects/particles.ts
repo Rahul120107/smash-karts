@@ -8,6 +8,8 @@ interface Particle { position: THREE.Vector3; velocity: THREE.Vector3; color: TH
 interface Decal { x: number; y: number; z: number; yaw: number; life: number; size: number; color: THREE.Color }
 /** Fixed-capacity effects: particles, shockwaves and tyre marks cost at most three draw calls. */
 export class Particles {
+  private reduced=false;
+  setReduced(value:boolean){this.reduced=value;}
   readonly capacity = 512;
   private pool: Particle[] = Array.from({ length: this.capacity }, () => ({ position: new THREE.Vector3(), velocity: new THREE.Vector3(), color: new THREE.Color(), life: 0, total: 1, size: 0, gravity: 0, growth: 0 }));
   private skids: Decal[] = Array.from({ length: 256 }, () => ({ x: 0, y: 0, z: 0, yaw: 0, life: 0, size: 1, color: new THREE.Color(0x16232c) }));
@@ -34,14 +36,16 @@ export class Particles {
       Object.assign(ring, { x: event.x, y: groundHeight(event.x, event.z) + 0.05, z: event.z, life: 0.65, size: 2 }); ring.color.setHex(0xffd963);
       return;
     }
-    if (event.kind === 'fire' && (event.weapon === 'shield' || event.weapon === 'boost' || event.weapon === 'mine')) return;
+    if(event.kind==='weaponExpired'){for(let i=0;i<6;i++)this.add(event,event.weapon?WEAPONS[event.weapon].color:0xffffff,.07,.3,1.2,0);return;}
+    if (event.kind === 'fire' && (event.weapon === 'shield' || event.weapon === 'boost')) return;
     const explosive = event.kind === 'explosion' || event.kind === 'elimination';
     const cannon = event.weapon === 'cannon';
     const color = event.weapon === 'orbit' ? 0xd7a4ff : explosive ? cannon ? 0xffd29a : event.weapon === 'blastMissile' ? 0xff747c : 0xffad4c : event.kind === 'respawn' || event.kind === 'shield' || event.kind === 'shieldImpact' ? 0x68ddff : event.kind === 'pickup' ? event.weapon ? WEAPONS[event.weapon].color : 0xffd963 : event.kind === 'boost' ? 0x64ffcf : 0xfff1b5;
-    const fire = event.kind === 'fire', count = explosive ? 22 : fire ? cannon ? 8 : 4 : event.kind === 'collision' ? 5 : 12;
+    const fire = event.kind === 'fire', count = Math.ceil((explosive ? 22 : fire ? cannon ? 8 : 4 : event.kind === 'collision' ? 5 : 12)*(this.reduced?.5:1));
     for (let i = 0; i < count; i++) this.add(event, color, explosive ? 0.16 + Math.random() * 0.25 : fire ? 0.1 : 0.065, explosive ? 0.65 : fire ? 0.09 : 0.4, explosive ? 12 : fire ? 2 : 5);
     if (explosive) for (let i = 0; i < 10; i++) this.add(event, 0x75808b, 0.18, 0.85, 4, -1.2, 1.8);
     if (cannon && fire) for (let i = 0; i < 14; i++) this.add(event, 0xb8b4a9, 0.2, 0.7, 2.5, -1, 2);
+    if(fire&&event.weapon==='machineGun')this.add({x:event.x+.15,y:event.y,z:event.z},0xffd47a,.035,.24,1.8,9);
     if (cannon && explosive) for (let i = 0; i < 8; i++) this.add(event, 0x374657, 0.14, 0.8, 11, 18);
     if (explosive || event.kind === 'respawn' || event.kind === 'pickup' || event.kind === 'shield' || fire && event.weapon === 'orbit') {
       const ring = this.rings[this.ringIndex++ % this.rings.length]!;

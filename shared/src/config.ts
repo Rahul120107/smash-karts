@@ -15,4 +15,5 @@ export const CONFIG = {
   airControl: 0.15,
 } as const;
 export const DT = 1 / CONFIG.tickRate;
-export const COLORS = [0xf44349, 0x369bff, 0x9bef37, 0x9861f5, 0xffd344];
+// Nine separated liveries for an eight-player room, including a spare on turnover.
+export const COLORS = [0xf02e46, 0x246bff, 0xffce27, 0x22c968, 0x9445ed, 0xff791f, 0x11dbe3, 0x202936, 0xf1f5ef] as const;

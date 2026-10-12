@@ -35,8 +35,8 @@ export function createProjectile(kind: ProjectileKind): THREE.Group {
 }
 export function createPickup(): THREE.Group {
   const group = new THREE.Group();
-  const cube = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.15, 1.15), new THREE.MeshStandardMaterial({ color: 0xffd367, emissive: 0xd99724, emissiveIntensity: 0.4, roughness: 0.24, metalness: .28 })); cube.castShadow = true; group.add(cube);
-  const trim = new THREE.MeshStandardMaterial({ color: 0x13344f, emissive: 0x1a728c, emissiveIntensity: .24, metalness: .55, roughness: .3 });
+  const cube = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.15, 1.15), new THREE.MeshStandardMaterial({ color: 0xffd367, emissive: 0xe8a535, emissiveIntensity: .6, roughness: .22, metalness: .28 })); cube.castShadow = true; group.add(cube);
+  const trim = new THREE.MeshStandardMaterial({ color: 0x13344f, emissive: 0x26a4b4, emissiveIntensity: .4, metalness: .55, roughness: .3 });
   for(const y of [-.5,.5]) for(const x of [-.52,.52]) {const edge=new THREE.Mesh(new THREE.BoxGeometry(.13,.14,1.21),trim);edge.position.set(x,y,0);group.add(edge);}
   for(const x of [-.52,.52]) for(const z of [-.52,.52]) {const edge=new THREE.Mesh(new THREE.BoxGeometry(.13,1.15,.13),trim);edge.position.set(x,0,z);group.add(edge);}
   const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128; const ctx = canvas.getContext('2d')!;

@@ -1,7 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { RoomManager } from '../server/src/rooms/manager.js';
-import { CONFIG } from '../shared/src/config.js';
+import { COLORS, CONFIG } from '../shared/src/config.js';
 describe('room lifecycle', () => {
+  it('keeps eight liveries distinct through player turnover, respawn, snapshots and replay', () => {
+    const manager = new RoomManager(8, .05), room = manager.create('p0', 'Driver 0');
+    for (let i = 1; i < 8; i++) manager.join(`p${i}`, `Driver ${i}`, room.code);
+    const colors = () => [...room.simulation.players.values()].map(p => p.color);
+    expect(new Set(colors()).size).toBe(8);
+    const original = new Map([...room.simulation.players].map(([id,p]) => [id,p.color]));
+    manager.leave('p2'); manager.join('replacement', 'Replacement', room.code);
+    expect(new Set(colors()).size).toBe(8); expect(room.simulation.players.get('replacement')!.color).toBe(COLORS[8]);
+    const stable = colors(); manager.start('p0'); expect(colors()).toEqual(stable);
+    const player = room.simulation.players.get('p4')!; player.health=0; player.respawnAt=0;
+    room.simulation.step(); expect(player.health).toBe(CONFIG.maxHealth); expect(player.color).toBe(original.get('p4'));
+    for (let i = 0; i < 4; i++) room.simulation.step(); manager.start('p0'); expect(colors()).toEqual(stable);
+    for (let i = 0; i < 20; i++) {
+      manager.leave('replacement'); manager.join('replacement', 'Replacement', room.code);
+      expect(new Set(colors()).size).toBe(8);
+      for (const [id,p] of room.simulation.players) if (id !== 'replacement') expect(p.color).toBe(original.get(id));
+      expect(room.simulation.snapshot(room.code,room.host,8).players.map(p=>p.color)).toEqual(colors());
+    }
+  });
   it('creates a private room, joins, and isolates room memberships', () => {
     const manager = new RoomManager(); const room = manager.create('a', 'Alpha');
     expect(room.code).toMatch(/^[A-HJ-NP-Z2-9]{5}$/); expect(room.host).toBe('a');

@@ -1,0 +1,17 @@
+{
+  "captured": "2026-10-12T13:26:28.541Z",
+  "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x0000A7A1) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "errors": [],
+  "views": [
+    "top-down",
+    "overview",
+    "formula-kart",
+    "liveries",
+    "third-person",
+    "horizon-0",
+    "horizon-1",
+    "horizon-2",
+    "horizon-3"
+  ],
+  "note": "Review cameras import the production map/kart builders and lighting through Vite; third person and cardinal horizon views run the built React game with the authoritative server."
+}

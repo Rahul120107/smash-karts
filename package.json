@@ -21,7 +21,9 @@
     "test:browser": "playwright test",
     "test:production": "node scripts/production-smoke.mjs",
     "check": "npm run build && npm test && npm run test:browser && npm run test:production",
-    "benchmark": "tsx scripts/benchmark.ts"
+    "benchmark": "tsx scripts/benchmark.ts",
+    "review:visuals": "tsx scripts/capture-map.ts --visual-upgrade",
+    "profile:rendering": "tsx scripts/profile-rendering.ts"
   },
   "engines": { "node": ">=24.18.0 <25" },
   "dependencies": {

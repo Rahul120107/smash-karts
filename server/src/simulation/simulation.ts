@@ -18,13 +18,18 @@ export class Simulation implements CombatWorld {
   pickups: Pickup[] = []; events: GameEvent[] = [];
   readonly attacks = new AttackSequences();
   private winnerIds: string[] = [];
+  private colorCursor = 0;
   private projectileId = 0; private eventId = 0; private controls = new Map<string, Controls>();
   constructor(public duration: number = CONFIG.matchDuration, public random: () => number = Math.random) { this.resetPickups(); }
   nextProjectileId() { return ++this.projectileId; }
   emit(event: Omit<GameEvent, 'id' | 'at'>) { this.events.push({ ...event, id: ++this.eventId, at: this.time }); }
   private resetPickups() { this.pickups = PICKUP_POSITIONS.map((p, id) => ({ ...p, id, active: true, availableAt: 0 })); }
   addPlayer(id: string, name: string): PlayerState {
-    const p: PlayerState = { id, name, color: COLORS[this.players.size % COLORS.length]!, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0,
+    const usedColors = new Set([...this.players.values()].map(player => player.color));
+    const orderedColors = [...COLORS.slice(this.colorCursor), ...COLORS.slice(0, this.colorCursor)];
+    const color = orderedColors.find(candidate => !usedColors.has(candidate)) ?? COLORS[0];
+    this.colorCursor = (COLORS.indexOf(color) + 1) % COLORS.length;
+    const p: PlayerState = { id, name, color, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0,
       health: CONFIG.maxHealth, score: 0, deaths: 0, weapon: null, ammo: 0, nextFire: 0, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, invulnerableUntil: 0, respawnAt: 0, ack: 0 };
     this.players.set(id, p); this.controls.set(id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0, fireDown: false, pressed: false });
     this.spawn(p, this.phase === 'playing' ? undefined : this.players.size - 1); return p;

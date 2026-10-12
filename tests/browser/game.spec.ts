@@ -351,11 +351,15 @@ test('eight independent browser players render and send input concurrently', asy
   }
   const code = await pages[0]!.getByTestId('room-code').innerText(); server.rooms.rooms.get(code)!.simulation.duration = 60;
   await expect.poll(() => observations[0]!.latest?.players.length).toBe(8);
+  const liveries = new Map(observations[0]!.latest!.players.map(p => [p.id,p.color]));
+  expect(new Set(liveries.values()).size).toBe(8);
   await pages[0]!.getByRole('button', { name: 'Start match' }).click();
-  for (const page of pages) {
-    await expect(page.getByTestId('match-timer')).toBeVisible(); await page.locator('canvas').click({ position: { x: 320, y: 360 } });
+  // Focus and apply actual keys concurrently; serial click stability checks on eight
+  // software WebGL renderers can consume the entire match before the last input.
+  await Promise.all(pages.map(async page => {
+    await expect(page.getByTestId('match-timer')).toBeVisible(); await page.locator('canvas').focus();
     await page.keyboard.down('KeyW'); await page.keyboard.down('Space');
-  }
+  }));
   const measurements = await Promise.all(pages.map(page => page.evaluate(() => new Promise<{ frames: number; elapsed: number; maxFrameGap: number }>(ok => {
     const start = performance.now(); let frames = 0, previous = start, maxFrameGap = 0;
     const frame = (now: number) => { frames++; maxFrameGap = Math.max(maxFrameGap, now - previous); previous = now;
@@ -365,6 +369,7 @@ test('eight independent browser players render and send input concurrently', asy
   for (const page of pages) { await page.keyboard.up('Space'); await page.keyboard.up('KeyW'); }
   for (let i = 0; i < pages.length; i++) {
     await expect.poll(() => observations[i]!.latest?.players.every(p => p.ack >= 10 && Number.isFinite(p.x) && Number.isFinite(p.z))).toBe(true);
+    expect(observations[i]!.latest!.players.map(p => [p.id,p.color])).toEqual([...liveries]);
     await expect(pages[i]!.locator('canvas')).toBeVisible(); expect(measurements[i]!.frames).toBeGreaterThan(0);
   }
   const renderStats = await Promise.all(pages.map(page => page.locator('.game-canvas').evaluate(element => ({ gpu:(element as HTMLElement).dataset.gpu, frameMs:Number((element as HTMLElement).dataset.frameMs), drawCalls: Number((element as HTMLElement).dataset.drawCalls), triangles: Number((element as HTMLElement).dataset.triangles) }))));

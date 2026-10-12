@@ -17,11 +17,12 @@ import { GameAudio } from '../effects/audio.js';
 import { IslandBackdrop } from '../maps/island-backdrop.js';
 import { animateSuspension } from '../vehicles/animation.js';
 import { PickupBatch } from '../weapons/pickup-batch.js';
+import { addIslandLighting } from './presentation.js';
 
 function disposeObject(object: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
   object.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.Sprite || child instanceof THREE.LineSegments) {
+    if (child instanceof THREE.Mesh || child instanceof THREE.Sprite || child instanceof THREE.LineSegments || child instanceof THREE.Points) {
       if ('geometry' in child) geometries.add(child.geometry);
       for (const m of Array.isArray(child.material) ? child.material : [child.material]) {
         materials.add(m); const map = (m as THREE.MeshBasicMaterial).map; if (map) textures.add(map);
@@ -57,13 +58,8 @@ export class ArenaGame {
     this.container.dataset.gpu=gpu ? String(gl.getParameter(gpu.UNMASKED_RENDERER_WEBGL)) : 'Renderer unavailable';
     const software=/SwiftShader|llvmpipe|Software Rasterizer/i.test(this.container.dataset.gpu);
     if(software){this.renderer.setPixelRatio(.85);this.renderer.shadowMap.enabled=false;this.container.dataset.reducedGraphics='true';}
-    this.renderer.domElement.setAttribute('aria-label', '3D kart combat arena'); this.container.append(this.renderer.domElement);
-    this.scene.background = new THREE.Color(0xb4ddf7); this.scene.fog = new THREE.Fog(0xb4ddf7, 90, 320);
-    const skyCanvas = document.createElement('canvas'); skyCanvas.width = 4; skyCanvas.height = 128;
-    const skyContext = skyCanvas.getContext('2d')!, gradient = skyContext.createLinearGradient(0, 0, 0, 128);
-    gradient.addColorStop(0, '#83bffa'); gradient.addColorStop(0.5, '#badfed'); gradient.addColorStop(1, '#e6dcf9');
-    skyContext.fillStyle = gradient; skyContext.fillRect(0, 0, 4, 128);
-    const skyMap = new THREE.CanvasTexture(skyCanvas); skyMap.colorSpace = THREE.SRGBColorSpace;
+    this.renderer.domElement.setAttribute('aria-label', '3D kart combat arena'); this.renderer.domElement.tabIndex = 0; this.container.append(this.renderer.domElement);
+    addIslandLighting(this.scene);
     // Tiny original sky cubemap provides broad, soft material reflections, no screen-space pass.
     const faces=Array.from({length:6},(_,i)=>{
       const canvas=document.createElement('canvas');canvas.width=canvas.height=32;const context=canvas.getContext('2d')!;
@@ -71,11 +67,6 @@ export class ArenaGame {
     });
     const reflections=new THREE.CubeTexture(faces);reflections.colorSpace=THREE.SRGBColorSpace;reflections.needsUpdate=true;
     if(!software){this.scene.environment=reflections;this.scene.environmentIntensity=.45;}else reflections.dispose();
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 24, 12), new THREE.MeshBasicMaterial({ map: skyMap, side: THREE.BackSide, fog: false, depthWrite: false })); sky.renderOrder = -2; this.scene.add(sky);
-    const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffedbe, fog: false })); sunDisc.position.set(-70, 82, 58); this.scene.add(sunDisc);
-    this.scene.add(new THREE.HemisphereLight(0xedf7ff, 0x777153, 2.1));
-    const sun = new THREE.DirectionalLight(0xfff0d3, 2.3); sun.position.set(-25, 50, 20); sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024); sun.shadow.camera.left = -62; sun.shadow.camera.right = 62; sun.shadow.camera.top = 62; sun.shadow.camera.bottom = -62; sun.shadow.camera.far = 150; sun.shadow.bias = -0.001; this.scene.add(sun);
     this.scene.add(buildArena()); this.environment = new IslandBackdrop(); this.scene.add(this.environment.group); this.particles = new Particles(this.scene);
     this.camera.position.set(70, 65, 72); this.camera.lookAt(0, 0, 0);
     this.resize = new ResizeObserver(() => this.updateSize()); this.resize.observe(container); this.updateSize();
@@ -247,11 +238,11 @@ export class ArenaGame {
     if (!this.cameraReady) this.renderYaw = visual.group.rotation.y;
     this.renderYaw += angleDelta(this.renderYaw, visual.group.rotation.y) * (1 - Math.exp(-9 * dt));
     const fx = Math.sin(this.renderYaw), fz = Math.cos(this.renderYaw);
-    this.aim.set(pos.x + fx * 1.8, pos.y + 1.2, pos.z + fz * 1.8);
+    this.aim.set(pos.x + fx * 3.2, pos.y + 1.55, pos.z + fz * 3.2);
     const speed = Math.min(1, Math.hypot(self.vx, self.vz) / (CONFIG.maxSpeed * CONFIG.boostMultiplier));
-    const distance = 8.2 + speed * 2, fov = 58 + speed * 5;
+    const distance = 8.8 + speed * 2.2, fov = 60 + speed * 5;
     this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-3 * dt)); this.camera.updateProjectionMatrix();
-    this.cameraTarget.set(pos.x - fx * distance, pos.y + 5.6 + speed * .6, pos.z - fz * distance);
+    this.cameraTarget.set(pos.x - fx * distance, pos.y + 5.1 + speed * .5, pos.z - fz * distance);
     const anchor = { x: pos.x, y: pos.y + 1.2, z: pos.z };
     Object.assign(this.aim, clipCameraRay(anchor, this.aim));
     Object.assign(this.cameraTarget, clipCameraRay(anchor, this.cameraTarget));

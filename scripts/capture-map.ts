@@ -5,7 +5,8 @@ import { startServer } from '../server/src/networking/server.js';
 import { ARENA_SIZE, CORNER_RADIUS, CROSSINGS, LAVA, PICKUP_POSITIONS, RAMPS, SPAWNS, WALLS, rampHalfWidth, toWorld } from '../shared/src/arena.js';
 
 /** Review tooling only. Imports the actual map builders; no debug camera in the shipped UI. */
-const output = 'docs/map-review';
+const visualUpgrade = process.argv.includes('--visual-upgrade');
+const output = visualUpgrade ? 'docs/visual-review' : 'docs/map-review';
 await mkdir(output, { recursive: true });
 const color=(value:number)=>'#'+value.toString(16).padStart(6,'0');
 const rampPlans=RAMPS.map(r=>{
@@ -29,20 +30,27 @@ const vite = await createServer({ configFile: 'client/vite.config.ts', optimizeD
     import * as THREE from '/@id/three';
     import { buildArena } from '/src/maps/arena.ts';
     import { IslandBackdrop } from '/src/maps/island-backdrop.ts';
+    import { addIslandLighting } from '/src/game/presentation.ts';
+    import { createKart } from '/src/vehicles/kart.ts';
+    import { COLORS } from '/@fs/${process.cwd().replaceAll('\\', '/')}/shared/src/config.ts';
     import { createPickup } from '/src/weapons/visuals.ts';
     import { PICKUP_POSITIONS } from '/@fs/${process.cwd().replaceAll('\\', '/')}/shared/src/arena.ts';
     const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(1);
     renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.1;
     renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.append(renderer.domElement);
-    const scene=new THREE.Scene();scene.background=new THREE.Color(0xb4ddf7);scene.fog=new THREE.Fog(0xb4ddf7,140,350);
-    scene.add(new THREE.HemisphereLight(0xedf7ff,0x777153,2.1));const sun=new THREE.DirectionalLight(0xfff0d3,2.3);sun.position.set(-25,50,20);sun.castShadow=true;
-    sun.shadow.mapSize.set(1024,1024);Object.assign(sun.shadow.camera,{left:-62,right:62,top:62,bottom:-62,far:150});sun.shadow.bias=-.001;scene.add(sun);
+    const scene=new THREE.Scene();addIslandLighting(scene);
     scene.add(buildArena());const backdrop=new IslandBackdrop();scene.add(backdrop.group);backdrop.update(4,new THREE.Vector3(),false);
     for(const p of PICKUP_POSITIONS){const box=createPickup();box.position.set(p.x,p.y+1,p.z);scene.add(box);}
-    const top=new URLSearchParams(location.search).get('view')==='top';let camera;
+    const view=new URLSearchParams(location.search).get('view'),top=view==='top';let camera;
     if(top){camera=new THREE.OrthographicCamera(-62,62,62,-62,.1,300);camera.position.set(0,150,0);camera.up.set(0,0,-1);}
-    else{camera=new THREE.PerspectiveCamera(48,innerWidth/innerHeight,.1,650);camera.position.set(82,88,105);}
-    camera.lookAt(0,0,0);renderer.render(scene,camera);document.body.dataset.ready='true';
+    else{camera=new THREE.PerspectiveCamera(48,innerWidth/innerHeight,.1,650);camera.position.set(108,64,125);}
+    camera.lookAt(0,0,0);
+    if(view==='kart'||view==='liveries'){
+      const count=view==='kart'?1:COLORS.length;
+      for(let i=0;i<count;i++){const kart=createKart(COLORS[i],'');kart.label.visible=false;kart.turret.visible=false;kart.group.position.set(-20+(count===1?0:(i%3-1)*3.4),0,count===1?0:(Math.floor(i/3)-1)*3.6);kart.group.rotation.y=.2;scene.add(kart.group);}
+      camera.position.set(-20+(count===1?3.1:10),count===1?2.3:9,count===1?4.3:13);camera.lookAt(-20,.6,0);
+    }
+    renderer.render(scene,camera);document.body.dataset.ready='true';
     document.body.dataset.drawCalls=renderer.info.render.calls;
   </script></body></html>`);
 });}}]});
@@ -53,9 +61,11 @@ const browser = await chromium.launch({ headless: true, args: ['--use-angle=d3d1
 const errors: string[] = [];
 try {
   const context = await browser.newContext(), page = await context.newPage();
-  page.on('pageerror', e => errors.push(e.message));
+  page.on('pageerror', e => { errors.push(e.message); console.error(e.stack); });
   page.on('console', m => { if (m.type()==='error') { errors.push(m.text()); console.error(m.text()); } });
-  for(const [view, width, height, file] of [['top',1024,1024,'top-down.png'],['overview',1440,1080,'overview.png']] as const){
+  const views: [string,number,number,string][]=[['top',1024,1024,'top-down.png'],['overview',1440,1080,'overview.png']];
+  if(visualUpgrade)views.push(['kart',1440,900,'formula-kart.png'],['liveries',1440,1080,'liveries.png']);
+  for(const [view, width, height, file] of views){
     await page.setViewportSize({width,height});await page.goto(`http://127.0.0.1:${vitePort}/__map-review?view=${view}`);
     await page.waitForFunction(()=>document.body.dataset.ready==='true');await page.screenshot({path:`${output}/${file}`});
   }
@@ -66,7 +76,13 @@ try {
   Object.assign(driver,{x:-12,y:0,z:18,yaw:Math.PI,vx:0,vy:0,vz:0,invulnerableUntil:0});
   const opponent=world.addPlayer('review-opponent','Scale reference');Object.assign(opponent,{x:12,y:0,z:18,yaw:Math.PI});
   await page.waitForTimeout(1800);await page.screenshot({path:`${output}/third-person.png`});
+  if(visualUpgrade){
+    for(let i=0;i<4;i++){
+      Object.assign(driver,{x:-12,y:0,z:18,yaw:i*Math.PI/2,vx:0,vy:0,vz:0,invulnerableUntil:0});
+      await page.waitForTimeout(1100);await page.screenshot({path:`${output}/horizon-${i}.png`});
+    }
+  }
   const gpu=await page.locator('.game-canvas').getAttribute('data-gpu');
-  await writeFile(`${output}/capture.json`,JSON.stringify({captured:new Date().toISOString(),gpu,errors,views:['top-down','overview','third-person'],note:'Overviews import production map builders through Vite; third person runs the built React game and authoritative server. Dimensions are inferred; attachment unavailable.'},null,2));
+  await writeFile(`${output}/capture.json`,JSON.stringify({captured:new Date().toISOString(),gpu,errors,views:visualUpgrade?['top-down','overview','formula-kart','liveries','third-person','horizon-0','horizon-1','horizon-2','horizon-3']:['top-down','overview','third-person'],note:'Review cameras import the production map/kart builders and lighting through Vite; third person and cardinal horizon views run the built React game with the authoritative server.'},null,2));
   if(errors.length)throw new Error(errors.join('\n'));
 }catch(error){console.error(errors);throw error;}finally{await browser.close();await game.close();await vite.close();}

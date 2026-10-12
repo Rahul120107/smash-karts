@@ -7,7 +7,7 @@ import { moveKart, NEUTRAL, resolveWalls } from '../shared/src/movement.js';
 import { wallContact, wallHit } from '../server/src/collisions/projectile.js';
 import { clipCameraRay } from '../client/src/game/camera.js';
 import { animateSuspension, newSuspension } from '../client/src/vehicles/animation.js';
-import { IslandBackdrop } from '../client/src/maps/island-backdrop.js';
+import { IslandBackdrop, WATERFALL_SITES } from '../client/src/maps/island-backdrop.js';
 import { kartShell } from '../client/src/vehicles/kart.js';
 import { buildArena, floorOutline } from '../client/src/maps/arena.js';
 const kart=(x=-12,z=0)=>({x,y:groundHeight(x,z),z,yaw:0,vx:0,vy:0,vz:0,yawRate:0});
@@ -42,11 +42,19 @@ describe('reference-shaped island routes and rendering',()=>{
     expect(WALLS.some(w=>w.x===0&&w.z===0)).toBe(false);
     const arena=buildArena();let meshes=0;arena.traverse(o=>{if(o instanceof THREE.Mesh){meshes++;o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});expect(meshes).toBeLessThan(25);
   });
-  it('keeps the backdrop minimal and the lava animation bounded',()=>{
-    const env=new IslandBackdrop();expect(env.group.children).toHaveLength(3);expect(env.group.getObjectByName('ocean')).toBeDefined();expect(env.group.getObjectByName('distant-islands')).toBeInstanceOf(THREE.InstancedMesh);
+  it('keeps the scenic horizon batched, outside combat routes and present in compatibility mode',()=>{
+    const env=new IslandBackdrop();expect(env.group.getObjectByName('ocean')).toBeDefined();expect(env.group.getObjectByName('distant-islands')).toBeInstanceOf(THREE.InstancedMesh);
+    const falls=env.group.getObjectByName('distant-waterfalls')!;expect(falls.children).toHaveLength(1);
+    const clouds=env.group.getObjectByName('drifting-clouds') as THREE.InstancedMesh;expect(clouds.count).toBe(96);
+    const initial=clouds.instanceMatrix.array.slice();env.update(20,new THREE.Vector3(),false);expect(clouds.instanceMatrix.array).not.toEqual(initial);
+    expect((env.group.getObjectByName('waterfall-mist') as THREE.Points).geometry.getAttribute('position').count).toBe(256);
+    for (const site of WATERFALL_SITES) {expect(Math.hypot(site.x,site.z)-site.radius*1.4).toBeGreaterThan(112);expect(site.height).toBeGreaterThanOrEqual(66);}
+    // No far-away shadow casters; no unbounded emitters or extra collidable scenery.
+    let draws=0;env.group.traverse(o=>{expect(o.castShadow).toBe(false);if(o instanceof THREE.Mesh||o instanceof THREE.Points)draws++;});expect(draws).toBeLessThanOrEqual(13);
     const lava=env.group.getObjectByName('lava') as THREE.Mesh<THREE.PlaneGeometry,THREE.ShaderMaterial>;expect(lava.position.y).toBe(LAVA.surface);
     env.update(30,new THREE.Vector3(),true);expect(lava.material.uniforms.time!.value).toBe(30);
-    env.group.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();if(o instanceof THREE.InstancedMesh)o.dispose();}});
+    expect(falls.visible).toBe(true);expect(clouds.visible).toBe(true);expect(env.group.getObjectByName('waterfall-mist')!.visible).toBe(false);
+    env.group.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Points){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();if(o instanceof THREE.InstancedMesh)o.dispose();}});
   });
 });
 describe('preserved sporty karts and independent suspension',()=>{

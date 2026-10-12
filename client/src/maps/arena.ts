@@ -16,13 +16,22 @@ export function floorOutline() {
 /** All obstacle meshes come from the authoritative boxes and ramp profiles. */
 export function buildArena(): THREE.Group {
   const group = new THREE.Group(); group.name = 'crossfire-island';
-  const road = new THREE.MeshStandardMaterial({ color: 0xbec4c9, roughness: .94 });
+  const grain = new Uint8Array(64 * 64 * 4);
+  for (let i = 0; i < 64 * 64; i++) {
+    const value = 237 + ((Math.imul(i + 7, 1597334677) >>> 24) % 19);
+    grain.set([value,value,value,255], i * 4);
+  }
+  const asphalt = new THREE.DataTexture(grain,64,64); asphalt.colorSpace=THREE.SRGBColorSpace;
+  asphalt.wrapS=asphalt.wrapT=THREE.RepeatWrapping; asphalt.magFilter=THREE.LinearFilter; asphalt.minFilter=THREE.LinearMipmapLinearFilter;
+  asphalt.generateMipmaps=true; asphalt.repeat.set(.6,.6); asphalt.needsUpdate=true;
+  const road = new THREE.MeshStandardMaterial({ color: 0x7c919a, map: asphalt, roughness: .88, metalness: .025 });
   const white = new THREE.MeshStandardMaterial({ color: 0xf7f7ef, roughness: .9 });
   const red = new THREE.MeshStandardMaterial({ color: 0xf34448, roughness: .86 });
   const pit = new THREE.MeshStandardMaterial({ color: 0x512334, roughness: 1 });
-  const green = new THREE.MeshStandardMaterial({ color: 0x56df47, roughness: .88 });
+  const green = new THREE.MeshStandardMaterial({ color: 0x37b77a, roughness: .88 });
+  const rail = new THREE.MeshStandardMaterial({ color: 0xd0e7e6, roughness: .4, metalness: .25 });
   const materials = new Map<number, THREE.MeshStandardMaterial>();
-  const colored = (color: number) => { let m = materials.get(color); if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness: .72 }); materials.set(color, m); } return m; };
+  const colored = (color: number) => { let m = materials.get(color); if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness: .42, metalness: .12 }); materials.set(color, m); } return m; };
   const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(floorOutline(), { depth: 2, bevelEnabled: false, curveSegments: 12 }), road);
   slab.rotation.x = -Math.PI / 2; slab.position.y = -2; slab.receiveShadow = true; group.add(slab);
   block(group,[LAVA.width,.1,LAVA.depth],[0,LAVA.bottom-.05,0],pit).castShadow = false;
@@ -33,7 +42,8 @@ export function buildArena(): THREE.Group {
   }
   for (const w of WALLS) {
     const mesh=block(group,[w.width,w.height,w.depth],[w.x,(w.base??0)+w.height/2,w.z],colored(w.color!));mesh.rotation.y=w.yaw??0;
-    const foot=block(group,[w.width,.08,w.depth],[w.x,(w.base??0)+.04,w.z],w.style==='barrier'?white:green);foot.rotation.y=w.yaw??0;
+    const foot=block(group,[w.width+.02,.08,w.depth+.02],[w.x,(w.base??0)+.04,w.z],w.style==='barrier'?white:green);foot.rotation.y=w.yaw??0;
+    const cap=block(group,[Math.max(.1,w.width-.08),.02,Math.max(.1,w.depth-.08)],[w.x,(w.base??0)+w.height+.008,w.z],rail);cap.rotation.y=w.yaw??0;cap.castShadow=false;
   }
   for (const r of RAMPS) {
     const local=new THREE.Group(),profile=rampProfile(r),vertices:number[]=[];
@@ -44,6 +54,8 @@ export function buildArena(): THREE.Group {
       for(const side of [-1,1])vertices.push(side*wa,0,za,side*wa,ya,za,side*wb,yb,zb,side*wa,0,za,side*wb,yb,zb,side*wb,0,zb);
     }
     const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.computeVertexNormals();
+    const uvs:number[]=[];for(let i=0;i<vertices.length;i+=3)uvs.push(vertices[i]!,vertices[i+2]!);
+    geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
     const surface=new THREE.Mesh(geometry,r.color?colored(r.color):road);surface.material.side=THREE.DoubleSide;surface.castShadow=true;surface.receiveShadow=true;local.add(surface);
     const run=(r.depth-(r.plateau??0))/2,slope=Math.atan2(r.height,run);
     for(const side of [-1,1]) {
@@ -59,6 +71,11 @@ export function buildArena(): THREE.Group {
     block(group,[.18,.008,84],[s*53,.006,0],white).castShadow=false;
     block(group,[84,.008,.18],[0,.006,s*53],white).castShadow=false;
     block(group,[16,1.2,.02],[0,-.6,s*7.99],pit);block(group,[.02,1.2,16],[s*7.99,-.6,0],pit);
+    // Lane dashes on the outer driving loop, clear of all collision geometry.
+    for(let i=-36;i<=36;i+=6) {
+      block(group,[2,.008,.14],[i,.012,s*49],white).castShadow=false;
+      block(group,[.14,.008,2],[s*49,.012,i],white).castShadow=false;
+    }
   }
   batchStatic(group); return group;
 }

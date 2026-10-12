@@ -1,0 +1,90 @@
+[
+  {
+    "browser": 1,
+    "frames": 1,
+    "elapsed": 2033.800000005962,
+    "maxFrameGap": 2033.800000005962,
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "frameMs": 528.6,
+    "drawCalls": 46,
+    "triangles": 37076,
+    "framesPerSecond": 0
+  },
+  {
+    "browser": 2,
+    "frames": 2,
+    "elapsed": 3538.2000000119224,
+    "maxFrameGap": 3083.2000000000007,
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "frameMs": 543.69,
+    "drawCalls": 46,
+    "triangles": 37076,
+    "framesPerSecond": 1
+  },
+  {
+    "browser": 3,
+    "frames": 1,
+    "elapsed": 3267.0999999999985,
+    "maxFrameGap": 3267.0999999999985,
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "frameMs": 505.04,
+    "drawCalls": 79,
+    "triangles": 43414,
+    "framesPerSecond": 0
+  },
+  {
+    "browser": 4,
+    "frames": 2,
+    "elapsed": 6033.700000000001,
+    "maxFrameGap": 5516.5,
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "frameMs": 505.81,
+    "drawCalls": 99,
+    "triangles": 46130,
+    "framesPerSecond": 0
+  },
+  {
+    "browser": 5,
+    "frames": 1,
+    "elapsed": 2638.0999999940395,
+    "maxFrameGap": 2638.0999999940395,
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "frameMs": 521.01,
+    "drawCalls": 46,
+    "triangles": 37076,
+    "framesPerSecond": 0
+  },
+  {
+    "browser": 6,
+    "frames": 1,
+    "elapsed": 3500.5000000178807,
+    "maxFrameGap": 3500.5000000178807,
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "frameMs": 544.65,
+    "drawCalls": 47,
+    "triangles": 37292,
+    "framesPerSecond": 0
+  },
+  {
+    "browser": 7,
+    "frames": 1,
+    "elapsed": 3483.7000000059597,
+    "maxFrameGap": 3483.7000000059597,
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "frameMs": 552.55,
+    "drawCalls": 71,
+    "triangles": 41644,
+    "framesPerSecond": 0
+  },
+  {
+    "browser": 8,
+    "frames": 1,
+    "elapsed": 2983.7000000119206,
+    "maxFrameGap": 2983.7000000119206,
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "frameMs": 476.29,
+    "drawCalls": 69,
+    "triangles": 41206,
+    "framesPerSecond": 0
+  }
+]

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { batchStatic } from '../game/batch.js';
 import { newSuspension, type SuspensionState } from './animation.js';
+import { GUN_MOUNT, CANNON_MOUNT } from '../../../shared/src/weapon-physics.js';
+import { WEAPONS } from '../../../shared/src/weapons.js';
 export interface KartVisual {
   group: THREE.Group; chassis: THREE.Group; wheels: THREE.Group[]; steering: THREE.Group[]; suspension: SuspensionState;
   turret: THREE.Group; cannon: THREE.Group; orbit: THREE.Group; missileMarker: THREE.Mesh; shield: THREE.Mesh; boost: THREE.Mesh; contact: THREE.Mesh; label: THREE.Sprite;
@@ -97,10 +99,10 @@ export function createKart(color: number, name: string): KartVisual {
     wheels.push(wheel); if (z > 0) steering.push(pivot); group.add(pivot);
   }
   tireGeometry.dispose();hubGeometry.dispose();
-  const turret = new THREE.Group(); turret.position.set(0.48, 0.95, 0.55);
+  const turret = new THREE.Group(); turret.position.set(GUN_MOUNT.x, GUN_MOUNT.y, GUN_MOUNT.z);
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.72, 6), dark); barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.3; turret.add(barrel);
   const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.12, 6), metal); muzzle.rotation.x = Math.PI / 2; muzzle.position.z = 0.62; turret.add(muzzle); batchStatic(turret); chassis.add(turret);
-  const cannon = new THREE.Group(); cannon.position.set(0, 0.94, 0.35);
+  const cannon = new THREE.Group(); cannon.position.set(CANNON_MOUNT.x, CANNON_MOUNT.y, CANNON_MOUNT.z); cannon.rotation.x = -Math.atan2(WEAPONS.cannon.launchVelocityY!, WEAPONS.cannon.speed);
   const cannonBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.31, 1, 12), dark); cannonBarrel.rotation.x = Math.PI / 2; cannonBarrel.position.z = 0.3; cannon.add(cannonBarrel);
   for (const z of [-0.12, 0.7]) { const band = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.045, 4, 12), metal); band.position.z = z; cannon.add(band); }
   const carriage = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.18, 0.65), paint); carriage.position.y = -0.22; cannon.add(carriage);

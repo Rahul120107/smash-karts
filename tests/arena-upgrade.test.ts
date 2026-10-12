@@ -44,7 +44,7 @@ describe('expanded collision-aligned arena', () => {
     for (const w of WALLS) {
       const k = { ...kart(w.x, w.z), y: w.base ?? 0 }; resolveWalls(k);
       expect(Math.abs(toLocal(k.x,k.z,w).x) >= w.width / 2 + CONFIG.kartRadius - 1e-8 || Math.abs(toLocal(k.x,k.z,w).z) >= w.depth / 2 + CONFIG.kartRadius - 1e-8).toBe(true);
-      expect(wallHit({ x: w.x - w.width - 2, y: (w.base ?? 0) + 0.7, z: w.z }, { x: w.x + w.width + 2, y: (w.base ?? 0) + 0.7, z: w.z })).not.toBeNull();
+      expect(wallHit({ x: w.x - w.width - 2, y: (w.base ?? 0) + w.height / 2, z: w.z }, { x: w.x + w.width + 2, y: (w.base ?? 0) + w.height / 2, z: w.z })).not.toBeNull();
     }
   });
 });

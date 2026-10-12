@@ -1,6 +1,6 @@
 import type { Vec3 } from './types.js';
 /** Dimensions are collision dimensions; yaw rotates around +Y, matching Three.js. */
-export interface Wall { x: number; z: number; width: number; depth: number; height: number; base?: number; yaw?: number; color?: number; style?: 'barrier' | 'boundary' | 'rail' }
+export interface Wall { x: number; z: number; width: number; depth: number; height: number; base?: number; yaw?: number; color?: number; style?: 'barrier' | 'boundary' | 'rail' | 'tunnel' }
 export interface Ramp { x: number; z: number; width: number; depth: number; height: number; plateau?: number; endWidth?: number; yaw?: number; color?: number }
 export const ARENA_SIZE = 112;
 export const CORNER_RADIUS = 12;
@@ -32,7 +32,14 @@ export const RAMPS: Ramp[] = [
   ...QUADRANTS.map(q => ({ x: q.sx * 40, z: q.sz * 40, width: 8, depth: 12, height: 1.2, plateau: 8, endWidth: 4, color: q.color })),
 ];
 export const PLATFORMS = RAMPS.slice(0, 4);
+// Two open portals cover existing elevated routes. The roof is a true overhead
+// collider, leaving four meters of driving clearance and every pickup accessible.
+export const TUNNELS: Wall[] = [-1, 1].flatMap(side => [
+  { x: side * 40, z: 8, width: 9, depth: 10, base: 5.2, height: .6, color: 0x33495c, style: 'tunnel' },
+  ...[-1, 1].map(edge => ({ x: side * 40 + edge * 4.3, z: 8, width: .65, depth: 10, base: 1.2, height: 4, color: 0x33495c, style: 'tunnel' as const })),
+]);
 export const WALLS: Wall[] = [ ...boundary,
+  ...TUNNELS,
   ...QUADRANTS.flatMap(q => [
     { x: q.sx * 14, z: q.sz * 22, width: 16, depth: 1.2, height: 1.2, color: q.color, style: 'barrier' as const },
     { x: q.sx * 24, z: q.sz * 13, width: 1.2, depth: 14, height: 1.2, color: q.color, style: 'barrier' as const },

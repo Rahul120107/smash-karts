@@ -18,6 +18,9 @@ import { IslandBackdrop } from '../maps/island-backdrop.js';
 import { animateSuspension } from '../vehicles/animation.js';
 import { PickupBatch } from '../weapons/pickup-batch.js';
 import { addIslandLighting } from './presentation.js';
+import { ballisticPosition } from '../../../shared/src/weapon-physics.js';
+import { weaponAim } from '../../../shared/src/aim.js';
+import { WEAPONS } from '../../../shared/src/weapons.js';
 
 function disposeObject(object: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
@@ -25,7 +28,7 @@ function disposeObject(object: THREE.Object3D) {
     if (child instanceof THREE.Mesh || child instanceof THREE.Sprite || child instanceof THREE.LineSegments || child instanceof THREE.Points) {
       if ('geometry' in child) geometries.add(child.geometry);
       for (const m of Array.isArray(child.material) ? child.material : [child.material]) {
-        materials.add(m); const map = (m as THREE.MeshBasicMaterial).map; if (map) textures.add(map);
+        materials.add(m); for (const value of Object.values(m)) if (value instanceof THREE.Texture) textures.add(value);
       }
       if(child instanceof THREE.InstancedMesh)child.dispose();
     }
@@ -37,7 +40,7 @@ export class ArenaGame {
   private renderer: THREE.WebGLRenderer; private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(58, 1, 0.1, 650);
   private environment: IslandBackdrop; private shake = 0;
-  private controls = new Controls(); private prediction = new Prediction(); private interpolation = new Interpolation();
+  private controls = new Controls(() => connection.state.snapshot?.phase === 'playing' && connection.state.status === 'connected' && !document.hidden); private prediction = new Prediction(); private interpolation = new Interpolation();
   private karts = new Map<string, KartVisual>(); private pickups = new Map<number, THREE.Group>();
   private projectiles = new Map<number, THREE.Group>(); private projectileTemplates = new Map<string, THREE.Group>();
   private pickupTemplate = createPickup(); private particles: Particles; readonly audio = new GameAudio();
@@ -81,7 +84,7 @@ export class ArenaGame {
   private receive(state: Snapshot) {
     const id = connection.state.id;
     if (state.code !== this.lastCode) this.lastEvent = 0;
-    if (state.phase !== this.lastPhase || state.code !== this.lastCode) { this.outgoing = []; this.accumulator = 0; this.previousInput = performance.now(); this.cameraReady = false; this.particles.reset(); this.idleDirty = true; }
+    if (state.phase !== this.lastPhase || state.code !== this.lastCode) { this.controls.clear(); this.outgoing = []; this.accumulator = 0; this.previousInput = performance.now(); this.cameraReady = false; this.particles.reset(); this.idleDirty = true; if (state.phase === 'playing') this.renderer.domElement.focus({ preventScroll: true }); }
     this.lastPhase = state.phase; this.lastCode = state.code;
     if (id) this.prediction.reconcile(state, id);
     this.interpolation.push(state);
@@ -147,7 +150,8 @@ export class ArenaGame {
       const extrapolation = Math.min(0.1, (now - this.lastFrame) / 1000);
       for (const p of state.projectiles) {
         const visual = this.projectiles.get(p.id)!;
-        visual.position.set(p.x + p.vx * extrapolation, p.y + p.vy * extrapolation, p.z + p.vz * extrapolation);
+        const position = ballisticPosition(p, extrapolation, p.kind === 'cannonball' || p.kind === 'bomb' ? CONFIG.gravity : 0);
+        visual.position.set(position.x, position.y, position.z);
         if (p.kind !== 'mine' && p.kind !== 'bomb') visual.lookAt(visual.position.x + p.vx, visual.position.y + p.vy, visual.position.z + p.vz);
         if (p.kind === 'mine') visual.scale.setScalar(state.time >= p.armedAt ? 1 + Math.sin(now / 100) * 0.06 : 0.85);
         if (p.kind === 'bomb') {
@@ -224,9 +228,10 @@ export class ArenaGame {
       pivot.position.y += (wheelHeight - pivot.position.y) * (1 - Math.exp(-18 * dt));
     }
     visual.chassis.rotation.z = visual.suspension.roll;
-    const aimTarget = state.players.find(other => other.id === p.aimTarget);
-    const turretYaw = aimTarget ? angleDelta(position.yaw, Math.atan2(aimTarget.x - position.x, aimTarget.z - position.z)) : 0;
-    visual.turret.rotation.y += (Math.max(-0.38, Math.min(0.38, turretYaw)) - visual.turret.rotation.y) * (1 - Math.exp(-18 * dt));
+    const aim = p.weapon && WEAPONS[p.weapon].aimAssist ? weaponAim({ ...p, ...position }, state.players, state.time, p.weapon).direction : null;
+    const turretYaw = aim ? angleDelta(position.yaw, Math.atan2(aim.x, aim.z)) : 0;
+    visual.turret.rotation.y += (turretYaw - visual.turret.rotation.y) * (1 - Math.exp(-18 * dt));
+    visual.turret.rotation.x += ((aim ? -Math.asin(aim.y) : 0) - visual.turret.rotation.x) * (1 - Math.exp(-18 * dt));
     visual.cannon.visible = p.weapon === 'cannon' || state.events.some(e => e.kind === 'fire' && e.player === p.id && e.weapon === 'cannon' && state.time - e.at < 0.6);
     visual.turret.visible = !visual.cannon.visible;
     if (state.time < p.boostUntil && state.phase === 'playing') this.particles.boost(position, dt);
@@ -238,11 +243,11 @@ export class ArenaGame {
     if (!this.cameraReady) this.renderYaw = visual.group.rotation.y;
     this.renderYaw += angleDelta(this.renderYaw, visual.group.rotation.y) * (1 - Math.exp(-9 * dt));
     const fx = Math.sin(this.renderYaw), fz = Math.cos(this.renderYaw);
-    this.aim.set(pos.x + fx * 3.2, pos.y + 1.55, pos.z + fz * 3.2);
+    this.aim.set(pos.x + fx * 3.6, pos.y + 1.85, pos.z + fz * 3.6);
     const speed = Math.min(1, Math.hypot(self.vx, self.vz) / (CONFIG.maxSpeed * CONFIG.boostMultiplier));
-    const distance = 8.8 + speed * 2.2, fov = 60 + speed * 5;
+    const distance = 8.8 + speed * 2.2, fov = 62 + speed * 5;
     this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-3 * dt)); this.camera.updateProjectionMatrix();
-    this.cameraTarget.set(pos.x - fx * distance, pos.y + 5.1 + speed * .5, pos.z - fz * distance);
+    this.cameraTarget.set(pos.x - fx * distance, pos.y + 4.7 + speed * .5, pos.z - fz * distance);
     const anchor = { x: pos.x, y: pos.y + 1.2, z: pos.z };
     Object.assign(this.aim, clipCameraRay(anchor, this.aim));
     Object.assign(this.cameraTarget, clipCameraRay(anchor, this.cameraTarget));

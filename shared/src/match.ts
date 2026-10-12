@@ -1,7 +1,7 @@
 import type { PlayerState } from './types.js';
 
 // One original island and one mode; these are labels, never client-selectable rules.
-export const MAP_LABEL = 'Crossfire Island';
+export const MAP_LABEL = 'Vesper Wilds';
 export const MODE_LABEL = 'Free For All';
 export function standings(players: Iterable<PlayerState>): PlayerState[] {
   return [...players].sort((a, b) => b.score - a.score || a.deaths - b.deaths || a.name.localeCompare(b.name, 'en') || a.id.localeCompare(b.id, 'en'));

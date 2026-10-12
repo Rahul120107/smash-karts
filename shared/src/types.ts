@@ -1,7 +1,7 @@
 export type WeaponId = 'machineGun' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'shield' | 'boost' | 'scatter' | 'cannon' | 'bullets' | 'blastMissile' | 'orbit';
 export type ProjectileKind = 'bullet' | 'rocket' | 'homing' | 'mine' | 'bomb' | 'pellet' | 'cannonball' | 'slug' | 'blastMissile';
 export interface Vec3 { x: number; y: number; z: number }
-export interface Input { seq: number; throttle: number; steer: number; fire: boolean; drift: boolean }
+export interface Input { seq: number; throttle: number; steer: number; fire: boolean; drift: boolean; firePress?: number }
 export interface KartState extends Vec3 { yaw: number; vx: number; vz: number; vy: number; yawRate?: number }
 export interface PlayerState extends KartState {
   id: string; name: string; color: number; health: number; score: number; deaths: number;

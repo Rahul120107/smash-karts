@@ -6,7 +6,8 @@ import { ARENA_SIZE, CORNER_RADIUS, CROSSINGS, LAVA, PICKUP_POSITIONS, RAMPS, SP
 
 /** Review tooling only. Imports the actual map builders; no debug camera in the shipped UI. */
 const visualUpgrade = process.argv.includes('--visual-upgrade');
-const output = visualUpgrade ? 'docs/visual-review' : 'docs/map-review';
+const alienUpgrade = process.argv.includes('--alien-upgrade');
+const output = alienUpgrade ? 'docs/alien-review' : visualUpgrade ? 'docs/visual-review' : 'docs/map-review';
 await mkdir(output, { recursive: true });
 const color=(value:number)=>'#'+value.toString(16).padStart(6,'0');
 const rampPlans=RAMPS.map(r=>{
@@ -64,7 +65,7 @@ try {
   page.on('pageerror', e => { errors.push(e.message); console.error(e.stack); });
   page.on('console', m => { if (m.type()==='error') { errors.push(m.text()); console.error(m.text()); } });
   const views: [string,number,number,string][]=[['top',1024,1024,'top-down.png'],['overview',1440,1080,'overview.png']];
-  if(visualUpgrade)views.push(['kart',1440,900,'formula-kart.png'],['liveries',1440,1080,'liveries.png']);
+  if(visualUpgrade || alienUpgrade)views.push(['kart',1440,900,'formula-kart.png'],['liveries',1440,1080,'liveries.png']);
   for(const [view, width, height, file] of views){
     await page.setViewportSize({width,height});await page.goto(`http://127.0.0.1:${vitePort}/__map-review?view=${view}`);
     await page.waitForFunction(()=>document.body.dataset.ready==='true');await page.screenshot({path:`${output}/${file}`});
@@ -76,7 +77,7 @@ try {
   Object.assign(driver,{x:-12,y:0,z:18,yaw:Math.PI,vx:0,vy:0,vz:0,invulnerableUntil:0});
   const opponent=world.addPlayer('review-opponent','Scale reference');Object.assign(opponent,{x:12,y:0,z:18,yaw:Math.PI});
   await page.waitForTimeout(1800);await page.screenshot({path:`${output}/third-person.png`});
-  if(visualUpgrade){
+  if(visualUpgrade || alienUpgrade){
     for(let i=0;i<4;i++){
       Object.assign(driver,{x:-12,y:0,z:18,yaw:i*Math.PI/2,vx:0,vy:0,vz:0,invulnerableUntil:0});
       await page.waitForTimeout(1100);await page.screenshot({path:`${output}/horizon-${i}.png`});

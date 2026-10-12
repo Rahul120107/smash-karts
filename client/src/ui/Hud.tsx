@@ -22,7 +22,7 @@ export function Hud({ state, id, rtt, feed, muted, onMute, onLeave }: { state: S
   const self = state.players.find(p => p.id === id); if (!self) return null;
   const weapon = self.weapon ? WEAPONS[self.weapon] : null, scores = ranked(state);
   const telemetry = drivingTelemetry(self), target = state.players.find(p => p.id === self.aimTarget && p.health > 0);
-  const assisted = self.weapon === 'machineGun' && !!target && self.health > 0;
+  const assisted = !!weapon?.aimAssist && !!target && self.health > 0;
   const hurt = state.events.some(e => e.kind === 'hit' && e.target === id && state.time - e.at < 0.25);
   return <div className={'hud ' + (hurt ? 'hurt' : '')}>
     <div className="hud-top">
@@ -33,8 +33,8 @@ export function Hud({ state, id, rtt, feed, muted, onMute, onLeave }: { state: S
     <aside className="leaderboard"><span className="eyebrow">LIVE STANDINGS <small>ELIMS</small></span>{scores.map((p, index) => <div className={p.id === id ? 'you' : ''} key={p.id}><span className="rank">{String(index + 1).padStart(2, '0')}</span><i style={{ background: '#' + p.color.toString(16).padStart(6, '0') }}/><span className="player-name">{p.name}{p.id === id ? ' · you' : ''}</span><b>{p.score}</b></div>)}</aside>
     <div className="kill-feed" aria-live="polite">{feed.filter(e => state.time - e.at < 4 && state.time >= e.at).map(e => <div key={e.id}><b>{state.players.find(p => p.id === e.player)?.name ?? (e.player === 'environment' ? 'Lava' : 'Player')}</b><span>✦</span>{state.players.find(p => p.id === e.target)?.name ?? 'Player'}</div>)}</div>
     <div className={'aim-indicator ' + (assisted ? 'locked' : '')} aria-hidden="true"><i/><i/><i/><i/></div>
-    {self.weapon === 'machineGun' && self.health > 0 && <div className={'aim-feedback ' + (assisted ? 'locked' : '')} data-testid="aim-feedback">{assisted ? 'TRACKING ' + target!.name : 'ASSIST READY'}</div>}
-    {state.time < 1.5 && <div className="battle-live"><span>CROSSFIRE ISLAND</span><strong>BATTLE LIVE</strong><small>Collect. Aim. Fire.</small></div>}
+    {weapon?.aimAssist && self.health > 0 && <div className={'aim-feedback ' + (assisted ? 'locked' : '')} data-testid="aim-feedback">{assisted ? 'TRACKING ' + target!.name : 'ASSIST READY'}</div>}
+    {state.time < 1.5 && <div className="battle-live"><span>{MAP_LABEL.toUpperCase()}</span><strong>BATTLE LIVE</strong><small>Collect. Aim. Fire.</small></div>}
     {self.health <= 0 && <div className="respawn"><span className="eyebrow">KART ELIMINATED</span><strong>Back in {Math.max(1, Math.ceil(self.respawnAt - state.time))}</strong><span>Find a pickup. Return the favor.</span></div>}
     <div className="hud-bottom">
       <div className="vitals">

@@ -1,0 +1,11 @@
+{
+  "simulatedSeconds": 180,
+  "players": 8,
+  "wallMilliseconds": 1234,
+  "tickAndSnapshotP95Milliseconds": 0.256,
+  "peakProjectiles": 26,
+  "averageSnapshotBytes": 7695,
+  "estimatedOutboundKBpsPerEightPlayerRoom": 1202,
+  "totalEliminations": 7,
+  "phase": "finished"
+}

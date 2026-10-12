@@ -25,7 +25,9 @@ export function parseMessage(raw: string): ClientMessage {
         if (!object(c) || !Number.isSafeInteger(c.seq) || (c.seq as number) < 1 || (c.seq as number) > 1e9 ||
           typeof c.throttle !== 'number' || !Number.isFinite(c.throttle) || Math.abs(c.throttle) > 1 ||
           typeof c.steer !== 'number' || !Number.isFinite(c.steer) || Math.abs(c.steer) > 1 || typeof c.fire !== 'boolean' || typeof c.drift !== 'boolean') throw new Error('Invalid player controls.');
-        commands.push({ seq: c.seq as number, throttle: c.throttle, steer: c.steer, fire: c.fire, drift: c.drift });
+        if (c.firePress !== undefined && (!Number.isSafeInteger(c.firePress) || (c.firePress as number) < 0 || (c.firePress as number) > 1e9)) throw new Error('Invalid fire press.');
+        commands.push({ seq: c.seq as number, throttle: c.throttle, steer: c.steer, fire: c.fire, drift: c.drift,
+          ...(c.firePress === undefined ? {} : { firePress: c.firePress as number }) });
       }
       return { type: 'input', commands };
     }

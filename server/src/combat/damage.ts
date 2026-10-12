@@ -2,9 +2,7 @@ import { CONFIG } from '../../../shared/src/config.js';
 import { distance } from '../../../shared/src/math.js';
 import type { PlayerState, Projectile } from '../../../shared/src/types.js';
 import type { CombatWorld } from '../simulation/world.js';
-import { wallHit } from '../collisions/projectile.js';
-import { terrainHit } from '../collisions/projectile.js';
-import { groundHeight } from '../../../shared/src/arena.js';
+import { clearShot } from '../../../shared/src/aim.js';
 
 export function damage(world: CombatWorld, target: PlayerState, amount: number, attacker: string): void {
   // Owner attribution survives delayed fuses and splash; no weapon can hurt its originator.
@@ -37,11 +35,9 @@ export function explode(world: CombatWorld, projectile: Projectile): void {
     const center = { x: target.x, y: target.y + 0.65, z: target.z };
     const d = distance(projectile, center);
     if (target.id === projectile.owner || d > projectile.blast || target.health <= 0) continue;
-    // Tiny upward offset keeps ground-level mines from treating the floor as an occluder.
-    const obstruction = wallHit({ x: projectile.x, y: Math.max(projectile.y, 0.3), z: projectile.z }, center);
-    if (obstruction !== null && obstruction > 0.01 && obstruction < 0.99) continue;
-    const terrain = terrainHit({ x: projectile.x, y: Math.max(projectile.y, groundHeight(projectile.x, projectile.z) + .03), z: projectile.z }, center, 0);
-    if (terrain !== null && terrain > 0.01 && terrain < 0.99) continue;
+    // Use the actual impact point. Lifting an embedded explosion onto the top
+    // of a platform would incorrectly let splash escape through solid terrain.
+    if (!clearShot({ x: projectile.x, y: projectile.y + .001, z: projectile.z }, center, 0)) continue;
     const amount = Math.round(projectile.damage * (1 - 0.7 * d / projectile.blast));
     damage(world, target, amount, projectile.owner);
   }

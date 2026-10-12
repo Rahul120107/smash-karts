@@ -32,12 +32,12 @@ describe('reference-informed ammunition and activation', () => {
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 4 }, { ...NEUTRAL, seq: 5, fire: true }]); world.step(); world.step();
     expect(a.ammo).toBe(1);
   });
-  it('straight heavy bullets have no auto-aim and deal their configured direct damage', () => {
-    const { world, a, b } = duel(); equip(a, 'bullets'); activate(world, a);
+  it('heavy bullets assist within their cone and deal authoritative direct damage', () => {
+    const { world, a, b } = duel(); world.random = () => .5; equip(a, 'bullets'); activate(world, a);
     const shot = world.projectiles.values().next().value!;
-    expect(shot).toMatchObject({ kind: 'slug', target: null, blast: 0, vx: 0 });
+    expect(shot).toMatchObject({ kind: 'slug', target: null, blast: 0 }); expect(a.aimTarget).toBe(b.id);
     advance(world, .2); expect(b.health).toBe(100 - WEAPONS.bullets.damage); expect(a.health).toBe(100);
-    b.health = 100; b.x = -5; equip(a, 'bullets'); activate(world, a); advance(world, .3); expect(b.health).toBe(100);
+    b.health = 100; b.x = -10; equip(a, 'bullets'); activate(world, a); advance(world, .3); expect(b.health).toBe(100 - WEAPONS.bullets.damage);
   });
   it('a slow blast missile damages multiple opponents within its larger radius, excluding its owner', () => {
     const { world, a, b } = duel(), c = world.addPlayer('c', 'Third'), d = world.addPlayer('d', 'Distant');

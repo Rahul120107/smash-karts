@@ -31,7 +31,7 @@ async function wait(check, label, timeout = 8000) {
 }
 async function peer() {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { origin });
-  const result = { ws, messages: [], seq: 0, fire: false, closed: new Promise(ok => ws.once('close', code => ok(code))) };
+  const result = { ws, messages: [], seq: 0, fire: false, firePress: 0, closed: new Promise(ok => ws.once('close', code => ok(code))) };
   ws.on('message', data => { result.messages.push(JSON.parse(data.toString())); });
   ws.on('error', error => { output += `\nPeer error: ${error.message}`; });
   await new Promise((ok, fail) => { ws.once('open', ok); ws.once('error', fail); }); peers.push(result); return result;
@@ -53,10 +53,10 @@ try {
   const population = await fetch(`http://127.0.0.1:${port}/health`); assert.equal((await population.json()).players, 8);
   send(host, { type: 'start' }); await wait(() => state(host, s => s.phase === 'playing'), 'start match');
   stream = setInterval(() => peers.forEach((peer, index) => {
-    if (peer.ws.readyState === WebSocket.OPEN) send(peer, { type: 'input', commands: Array.from({ length: 3 }, () => ({ seq: ++peer.seq, throttle: 1, steer: index === 0 ? 0 : index % 2 ? 0.2 : -0.2, fire: peer.fire, drift: false })) });
+    if (peer.ws.readyState === WebSocket.OPEN) send(peer, { type: 'input', commands: Array.from({ length: 3 }, () => ({ seq: ++peer.seq, throttle: 1, steer: index === 0 ? 0 : index % 2 ? 0.2 : -0.2, fire: peer.fire, firePress: peer.firePress, drift: false })) });
   }), 50);
   const equipped = await wait(() => state(host, s => !!s.players.find(p => p.id === welcome.id)?.weapon), 'authoritative pickup');
-  const ammo = equipped.players.find(p => p.id === welcome.id).ammo; host.fire = true;
+  const ammo = equipped.players.find(p => p.id === welcome.id).ammo; host.fire = true; host.firePress++;
   await wait(() => state(host, s => s.players.find(p => p.id === welcome.id)?.ammo < ammo), 'weapon activation');
   await Promise.all(peers.map(peer => wait(() => state(peer, s => s.tick >= 150 && s.players.every(p => p.ack >= 60)), 'eight concurrent input streams')));
   const reference = host.messages.find(m => m.type === 'snapshot' && m.state.tick >= 150).state;

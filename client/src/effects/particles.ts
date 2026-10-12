@@ -53,6 +53,10 @@ export class Particles {
     for (const side of [-0.45, 0.45]) this.add({ x: kart.x - fx * 1.6 + fz * side, y: kart.y + 0.4, z: kart.z - fz * 1.6 - fx * side }, 0x61f5ce, 0.08, 0.32, 0.8, 0, 1.2);
   }
   trail(p: Projectile, dt: number) {
+    if (p.kind === 'cannonball') {
+      if (Math.random() < Math.min(1, dt * 16)) this.add(p, 0xbab8ae, .075, .3, .3, -.4, .9);
+      return;
+    }
     if ((p.kind !== 'rocket' && p.kind !== 'homing' && p.kind !== 'blastMissile' && p.kind !== 'bomb') || Math.random() > Math.min(1, dt * 30)) return;
     const speed = Math.hypot(p.vx, p.vy, p.vz) || 1;
     this.add(p.kind === 'bomb' ? {x:p.x,y:p.y+.55,z:p.z} : { x: p.x - p.vx / speed * 0.6, y: p.y - p.vy / speed * 0.6, z: p.z - p.vz / speed * 0.6 }, p.kind === 'homing' ? 0xba92e0 : p.kind === 'bomb' ? 0xffb752 : 0xb4bac0, p.kind === 'bomb' ? .055 : .12, p.kind === 'bomb' ? .2 : .45, .7, -.6, p.kind === 'bomb' ? 0 : 1.5);

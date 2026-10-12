@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { LAVA } from '../../../shared/src/arena.js';
 import { batchStatic } from '../game/batch.js';
+import { AlienForest } from './alien-forest.js';
+import { rockTextures } from './surface-textures.js';
 
 export const WATERFALL_SITES = Array.from({ length: 8 }, (_, i) => {
-  const angle = i * Math.PI / 4 + .18, distance = 285 + (i % 3) * 28;
-  return { x: Math.sin(angle) * distance, z: Math.cos(angle) * distance, height: 66 + (i % 3) * 10, radius: 25 + (i % 2) * 6, yaw: angle + Math.PI };
+  const angle = i * Math.PI / 4 + .18, distance = 340 + (i % 3) * 28;
+  return { x: Math.sin(angle) * distance, z: Math.cos(angle) * distance, height: 112 + (i % 3) * 18, radius: 30 + (i % 2) * 8, yaw: angle + Math.PI };
 });
 
 // Every shader shares one clock. Fog and output conversion match the main renderer.
@@ -19,7 +21,7 @@ const output = `#include <tonemapping_fragment>
 
 /** Original stratified rock; vertex colors add facets/strata without extra materials. */
 function cliffGeometry(radius: number, height: number, seed: number) {
-  const positions: number[] = [], colors: number[] = [], uv: number[] = [], sides = 12;
+  const positions: number[] = [], colors: number[] = [], uv: number[] = [], sides = 24;
   const levels = [0, .14, .36, .73, 1], widths = [1.27, 1.2, 1.08, 1, .86];
   const palette = [0x385c75, 0x57768a, 0x6a8992, 0x8b9c9a, 0xa0b3a3].map(c => new THREE.Color(c));
   const point = (level: number, side: number): [number, number, number] => {
@@ -28,7 +30,7 @@ function cliffGeometry(radius: number, height: number, seed: number) {
     return [Math.sin(a) * r, levels[level]! * height, Math.cos(a) * r];
   };
   const triangle = (a: number[], b: number[], c: number[], tint: THREE.Color) => {
-    positions.push(...a, ...b, ...c); for (let i = 0; i < 3; i++) { colors.push(tint.r, tint.g, tint.b); uv.push(0, 0); }
+    positions.push(...a, ...b, ...c); for (const p of [a, b, c]) { colors.push(tint.r, tint.g, tint.b); uv.push((p[0]! + p[2]!) * .08, p[1]! * .06); }
   };
   for (let l = 1; l < levels.length; l++) for (let i = 0; i < sides; i++) {
     const tint = palette[l - 1]!.clone().multiplyScalar(.91 + .12 * Math.sin(i * 2 + seed));
@@ -52,8 +54,9 @@ export class IslandBackdrop {
   private lastCloudUpdate = -Infinity;
   private spray: THREE.Points;
   private motes: THREE.Points;
+  private forest: AlienForest;
   constructor() {
-    this.group.name = 'island-backdrop';
+    this.group.name = 'alien-world-backdrop';
     const ocean = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400), new THREE.ShaderMaterial({
       uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), time: this.clock }, fog: true, vertexShader: vertex,
       fragmentShader: `uniform float time; varying vec3 world; varying vec2 vUv;
@@ -62,13 +65,15 @@ export class IslandBackdrop {
           float wave=sin(world.x*.19+time*.8)*sin(world.z*.23-time*.65);
           vec2 q=abs(world.xz)-vec2(44.);float shore=length(max(q,0.))+min(max(q.x,q.y),0.)-12.;
           float shallows=exp(-max(shore,0.)*.045);
-          vec3 c=mix(vec3(.018,.19,.36),vec3(.025,.65,.67),shallows*.88);
+          vec3 c=mix(vec3(.018,.10,.23),vec3(.015,.48,.53),shallows*.88);
           c+=vec3(.025,.10,.12)*wave;
           float crest=pow(max(0.,sin(world.x*.65+sin(world.z*.48)+time)*sin(world.z*.52-time*.6)),14.);
           c+=vec3(.29,.56,.59)*crest*.28;
           float foam=(1.-smoothstep(.3,2.8,shore))*(.45+.2*wave);c=mix(c,vec3(.72,.94,.92),foam);
           vec3 eye=normalize(cameraPosition-world);float glint=pow(max(0.,dot(reflect(normalize(vec3(.5,-1.,.35)),normalize(vec3(wave*.065,1.,cos(world.z*.2-time)*.045))),eye)),48.);
           c+=vec3(1.,.79,.44)*glint*.5;
+          float horizon=pow(1.-max(eye.y,0.),5.);c=mix(c,vec3(.20,.35,.48),horizon*.45);
+          c+=vec3(.03,.16,.15)*pow(max(0.,sin(world.x*.04+world.z*.05+time*.08)),12.)*shallows;
           gl_FragColor=vec4(c,1.);
           ${output}
         }`
@@ -76,8 +81,8 @@ export class IslandBackdrop {
     ocean.rotation.x = -Math.PI / 2; ocean.position.y = -2.4; ocean.name = 'ocean'; this.group.add(ocean);
 
     const landscape = new THREE.Group(); landscape.name = 'layered-cliffs';
-    const rockMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
-    const foliage = new THREE.MeshStandardMaterial({ color: 0x29996b, roughness: .95 });
+    const rockMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .91, ...rockTextures(), normalScale: new THREE.Vector2(.6, .6) });
+    const foliage = new THREE.MeshStandardMaterial({ color: 0x287f70, roughness: .82, emissive: 0x073d43, emissiveIntensity: .35 });
     const leafGeometry = new THREE.IcosahedronGeometry(1, 1);
     const addFoliage = (x: number, y: number, z: number, sx: number, sy: number, sz: number) => {
       const leaf = new THREE.Mesh(leafGeometry, foliage); leaf.position.set(x, y, z); leaf.scale.set(sx, sy, sz); landscape.add(leaf);
@@ -119,22 +124,42 @@ export class IslandBackdrop {
     batchStatic(landscape); batchStatic(waterfalls); this.group.add(landscape, waterfalls);
 
     // Hazy outer mountain ring: one instanced geometry and 24 original peaks.
-    const islands = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 7), new THREE.MeshBasicMaterial({ color: 0x7793ae }), 24);
+    const mountainGeometry = new THREE.SphereGeometry(1, 16, 10), mountainVertices = mountainGeometry.getAttribute('position');
+    for (let i = 0; i < mountainVertices.count; i++) {
+      const x = mountainVertices.getX(i), y = mountainVertices.getY(i), z = mountainVertices.getZ(i), ridge = 1 + Math.sin(Math.atan2(x, z) * 7 + y * 5) * .18;
+      mountainVertices.setXYZ(i, x * ridge * (1 - Math.max(y, 0) * .45), y, z * ridge * (1 - Math.max(y, 0) * .45));
+    }
+    mountainGeometry.computeVertexNormals();
+    const islands = new THREE.InstancedMesh(mountainGeometry, new THREE.MeshLambertMaterial({ color: 0x7399af }), 24);
     islands.name = 'distant-islands';
     for (let i = 0; i < 24; i++) {
-      const a = i * Math.PI / 12, distance = 390 + i % 3 * 14, height = 52 + i % 4 * 11;
+      const a = i * Math.PI / 12, distance = 400 + i % 3 * 14, height = 94 + i % 4 * 16;
       this.transform.position.set(Math.sin(a) * distance, height / 2 - 8, Math.cos(a) * distance);
-      this.transform.scale.set(38 + i % 3 * 9, height, 30 + i % 2 * 13); this.transform.rotation.set(0, a, .08 * Math.sin(i));
+      this.transform.scale.set(44 + i % 3 * 9, height / 2, 38 + i % 2 * 13); this.transform.rotation.set(0, a, .08 * Math.sin(i));
       this.transform.updateMatrix(); islands.setMatrixAt(i, this.transform.matrix);
       islands.setColorAt(i, new THREE.Color(i % 2 ? 0x7793ae : 0x8a9cba));
     }
     islands.computeBoundingSphere(); this.group.add(islands); this.transform.rotation.set(0, 0, 0);
 
-    this.clouds = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 7), new THREE.MeshLambertMaterial({ color: 0xfff5e5, emissive: 0x90b9c7, emissiveIntensity: .45 }), 96);
+    // Camera-facing soft puffs replace thousands of sphere triangles. Layered
+    // shaded lobes suggest cloud volume without a volumetric raymarch/pass.
+    this.clouds = new THREE.InstancedMesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+      uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog) }, transparent: true, depthWrite: false, fog: true,
+      vertexShader: `varying vec2 vUv;
+        #include <fog_pars_vertex>
+        void main(){vUv=uv;vec4 mvPosition=modelViewMatrix*instanceMatrix*vec4(0.,0.,0.,1.);mvPosition.xy+=position.xy*vec2(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz));gl_Position=projectionMatrix*mvPosition;
+        #include <fog_vertex>
+        }`,
+      fragmentShader: `varying vec2 vUv;
+        #include <fog_pars_fragment>
+        void main(){vec2 p=(vUv-.5)*2.;float d=length(p*vec2(.85,1.1));d=min(d,length((p-vec2(.42,-.09))*vec2(1.4,1.6)));d=min(d,length((p+vec2(.38,.06))*vec2(1.5,1.6)));float alpha=(1.-smoothstep(.48,1.,d))*.72;if(alpha<.006)discard;vec3 c=mix(vec3(.35,.47,.63),vec3(.88,.82,.91),smoothstep(-.5,.7,p.y));gl_FragColor=vec4(c,alpha);
+        ${output}
+        }`
+    }), 96);
     this.clouds.name = 'drifting-clouds'; this.clouds.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     for (let i = 0; i < 24; i++) {
-      const a = i * Math.PI / 12 + .1, r = 295 + i % 3 * 55;
-      for (let j = 0; j < 4; j++) this.cloudOrigins.push({ x: Math.sin(a) * r + (j - 1.5) * 10, y: 74 + i % 4 * 8 + (j % 2) * 3, z: Math.cos(a) * r + Math.sin(j) * 4, sx: 12 + j % 2 * 5, sy: 4.5 + j % 3 * 1.5, sz: 8 + j % 2 * 4, phase: i * .7 });
+      const a = i * Math.PI / 12 + .1, r = 360 + i % 3 * 55;
+      for (let j = 0; j < 4; j++) this.cloudOrigins.push({ x: Math.sin(a) * r + (j - 1.5) * 14, y: 90 + i % 4 * 12 + (j % 2) * 5, z: Math.cos(a) * r + Math.sin(j) * 6, sx: 18 + j % 2 * 8, sy: 8 + j % 3 * 2, sz: 12, phase: i * .7 });
     }
     this.group.add(this.clouds);
 
@@ -163,6 +188,24 @@ export class IslandBackdrop {
     const moteGeometry = new THREE.BufferGeometry(); moteGeometry.setAttribute('position', new THREE.Float32BufferAttribute(motePositions, 3));
     this.motes = new THREE.Points(moteGeometry, new THREE.PointsMaterial({ color: 0xe6fff3, size: .16, transparent: true, opacity: .45, depthWrite: false })); this.motes.name = 'sea-spray'; this.group.add(this.motes);
     this.addCoast();
+    this.forest = new AlienForest(this.clock); this.group.add(this.forest.group);
+    const floatingGeometry = new THREE.ConeGeometry(1, 1, 12, 3), floatPositions = floatingGeometry.getAttribute('position'), floatColors: number[] = [];
+    for (let i = 0; i < floatPositions.count; i++) {
+      const x = floatPositions.getX(i), y = floatPositions.getY(i), z = floatPositions.getZ(i);
+      const rough = 1 + Math.sin(Math.atan2(x, z) * 5 + y * 12) * .17;
+      floatPositions.setXYZ(i, x * rough, y + Math.sin(x * 4 + z * 3) * .05, z * rough);
+      const tint = new THREE.Color(y < -.49 ? 0x408e76 : 0x89a6b1); floatColors.push(tint.r, tint.g, tint.b);
+    }
+    floatingGeometry.setAttribute('color', new THREE.Float32BufferAttribute(floatColors, 3)); floatingGeometry.computeVertexNormals();
+    const floating = new THREE.InstancedMesh(floatingGeometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, ...rockTextures() }), 12);
+    floating.name = 'floating-rock-formations';
+    for (let i = 0; i < 12; i++) {
+      const a = i * Math.PI / 6 + .38, radius = 184 + i % 3 * 21;
+      this.transform.position.set(Math.sin(a) * radius, 40 + i % 3 * 20, Math.cos(a) * radius);
+      this.transform.scale.set(10 + i % 3 * 3, 24 + i % 4 * 7, 13 + i % 2 * 5); this.transform.rotation.set(0, a, Math.PI);
+      this.transform.updateMatrix(); floating.setMatrixAt(i, this.transform.matrix);
+    }
+    floating.computeBoundingSphere(); this.group.add(floating); this.transform.rotation.set(0, 0, 0);
 
     // Gameplay hazard stays exactly at the existing authoritative surface.
     const lava = new THREE.Mesh(new THREE.PlaneGeometry(LAVA.width, LAVA.depth), new THREE.ShaderMaterial({
@@ -178,10 +221,10 @@ export class IslandBackdrop {
 
   private addCoast() {
     const coast = new THREE.Group(); coast.name = 'tropical-coast';
-    const sand = new THREE.MeshStandardMaterial({ color: 0xe7ca8f, roughness: 1 });
-    const grass = new THREE.MeshStandardMaterial({ color: 0x46b878, roughness: 1 });
-    const bark = new THREE.MeshStandardMaterial({ color: 0x796249, roughness: 1 });
-    const leaf = new THREE.MeshStandardMaterial({ color: 0x188963, roughness: .9, side: THREE.DoubleSide });
+    const sand = new THREE.MeshStandardMaterial({ color: 0x526d81, roughness: .94 });
+    const grass = new THREE.MeshStandardMaterial({ color: 0x368c82, roughness: .9 });
+    const bark = new THREE.MeshStandardMaterial({ color: 0x4b4965, roughness: .95 });
+    const leaf = new THREE.MeshStandardMaterial({ color: 0x348f92, roughness: .7, emissive: 0x164c62, emissiveIntensity: .4, side: THREE.DoubleSide });
     const outline = (h: number, r: number) => {
       const shape = new THREE.Shape(); shape.moveTo(-h+r,-h); shape.lineTo(h-r,-h); shape.absarc(h-r,-h+r,r,-Math.PI/2,0,false);
       shape.lineTo(h,h-r); shape.absarc(h-r,h-r,r,0,Math.PI/2,false); shape.lineTo(-h+r,h); shape.absarc(-h+r,h-r,r,Math.PI/2,Math.PI,false);
@@ -208,6 +251,7 @@ export class IslandBackdrop {
   }
 
   update(seconds: number, _camera: THREE.Vector3, reduced: boolean) {
+    this.forest.update(reduced);
     this.clock.value = seconds; this.spray.visible = !reduced; this.motes.visible = !reduced;
     if (seconds < this.lastCloudUpdate || seconds - this.lastCloudUpdate >= (reduced ? .5 : .1)) {
       this.lastCloudUpdate = seconds;

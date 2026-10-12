@@ -40,6 +40,39 @@ async function lobby(host: Page, guest: Page) {
   await expect(host.locator('.lobby-players')).toContainText('Dusty'); await expect(guest.locator('.lobby-players')).toContainText('Roadrunner');
   return code;
 }
+test('Space on a focused HUD button fires while steering and drifting, and cannon volleys synchronize', async ({ browser }, testInfo) => {
+  test.setTimeout(90000);
+  const ctxA = await browser.newContext(), ctxB = await browser.newContext(); contexts.push(ctxA, ctxB);
+  const a = await ctxA.newPage(), b = await ctxB.newPage(), seenA = observe(a), seenB = observe(b);
+  const code = await lobby(a, b), world = server.rooms.rooms.get(code)!.simulation; world.duration = 60; world.random = () => .5;
+  await a.getByRole('button', { name: 'Start match' }).click(); await expect(b.getByTestId('match-timer')).toBeVisible();
+  const shooter = [...world.players.values()].find(p => p.name === 'Roadrunner')!, victim = [...world.players.values()].find(p => p.name === 'Dusty')!;
+  Object.assign(shooter, { x: -12, y: 0, z: 0, yaw: 0, yawRate: 0, vx: 0, vy: 0, vz: 0, weapon: 'machineGun', ammo: 30, nextFire: 0, invulnerableUntil: 0 });
+  Object.assign(victim, { x: -11.5, y: 0, z: 16, vx: 0, vy: 0, vz: 0, invulnerableUntil: 0 });
+  await expect(a.getByTestId('equipped-weapon')).toHaveText('Machine gun');
+  await a.getByRole('button', { name: 'Mute audio' }).focus();
+  for (const key of ['KeyW', 'KeyA', 'ShiftLeft']) await a.keyboard.down(key);
+  await a.keyboard.press('Space');
+  await expect.poll(() => seenA.inputs.some(input => input.throttle === 1 && input.steer === 1 && input.drift && (input.firePress ?? 0) > 0)).toBe(true);
+  for (const key of ['KeyW', 'KeyA', 'ShiftLeft']) await a.keyboard.up(key);
+  await expect(a.getByRole('button', { name: 'Mute audio' })).toBeVisible();
+  await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.ammo, { timeout: 15000 }).toBe(0);
+  expect(new Set(seenB.history.flatMap(s => s.events).filter(e => e.kind === 'fire' && e.player === shooter.id && e.weapon === 'machineGun').map(e => e.id)).size).toBe(30);
+  Object.assign(shooter, { x: -12, y: 0, z: -15, yaw: 0, yawRate: 0, vx: 0, vy: 0, vz: 0, weapon: 'cannon', ammo: 4, nextFire: 0 });
+  Object.assign(victim, { x: 30, y: 0, z: 40, health: 100, invulnerableUntil: 0 });
+  await expect(a.getByTestId('equipped-weapon')).toHaveText('Siege cannon');
+  const since = world.time;
+  for (const key of ['ArrowUp', 'ArrowRight', 'ShiftRight']) await a.keyboard.down(key);
+  await a.keyboard.press('Space');
+  await expect.poll(() => seenA.inputs.some(input => input.throttle === 1 && input.steer === -1 && input.drift && (input.firePress ?? 0) === 2)).toBe(true);
+  for (const key of ['ArrowUp', 'ArrowRight', 'ShiftRight']) await a.keyboard.up(key);
+  await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.ammo, { timeout: 15000 }).toBe(0);
+  const fire = new Map(seenB.history.flatMap(s => s.events).filter(e => e.at >= since && e.kind === 'fire' && e.weapon === 'cannon').map(e => [e.id, e.at]));
+  expect(fire.size).toBe(4); const times = [...fire.values()]; for (let i = 1; i < times.length; i++) expect(times[i]! - times[i - 1]!).toBeCloseTo(.8, 6);
+  const balls = seenB.history.flatMap(s => s.projectiles).filter(p => p.kind === 'cannonball');
+  expect(balls.some(p => p.vy > 0)).toBe(true); expect(balls.some(p => p.vy < 0)).toBe(true);
+  await a.screenshot({ path: testInfo.outputPath('alien-combat-input.png') });
+});
 test('idle arena redraws on resizing and room changes without continuously consuming GPU frames', async ({ browser }, testInfo) => {
   const context = await browser.newContext(); contexts.push(context); const page = await context.newPage(); observe(page);
   await page.goto(`http://127.0.0.1:${server.port}`); await expect(page.getByLabel('YOUR NICKNAME')).toBeVisible();
@@ -118,7 +151,7 @@ test('all weapon categories render and synchronize combat between browsers', asy
     // Server fixtures arrange reproducible shots. The browser activates them through ordinary Space input.
     world.projectiles.clear(); world.events = [];
     Object.assign(shooter, { x: -12, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, weapon, ammo: WEAPONS[weapon].ammo, nextFire: 0 });
-    Object.assign(target, { x: weapon === 'homing' ? -15 : -12, y: 0, z: weapon === 'mine' ? -1.8 : weapon === 'bomb' ? 19 : weapon === 'orbit' ? 1.8 : 6, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, respawnAt: 0 });
+    Object.assign(target, { x: weapon === 'homing' ? -15 : -12, y: 0, z: weapon === 'mine' ? -1.8 : weapon === 'bomb' ? 19 : weapon === 'cannon' ? 18.5 : weapon === 'orbit' ? 1.8 : 6, vx: 0, vy: 0, vz: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, respawnAt: 0 });
     await expect(a.getByTestId('equipped-weapon')).toHaveText(WEAPONS[weapon].label);
     const since = world.time;
     let fireId = 0;
@@ -233,8 +266,8 @@ test('quick Space taps execute complete bursts and heavy cannon combat in the ex
   const fireIds = new Set(seenB.history.flatMap(s => s.events).filter(e => e.kind === 'fire' && e.player === shooter.id && e.weapon === 'machineGun').map(e => e.id));
   expect(fireIds.size).toBe(30); expect(shooter.health).toBe(100); expect(shooter.score).toBe(1);
   Object.assign(shooter, { weapon: 'cannon', ammo: 1, nextFire: 0 });
-  Object.assign(victim, { x: -12, y: 0, z: 6, health: 100, invulnerableUntil: 0, respawnAt: 0, vx: 0, vy: 0, vz: 0 });
-  await expect(a.getByTestId('equipped-weapon')).toHaveText('Old cannon'); await a.screenshot({ path: testInfo.outputPath('old-cannon-ready.png') });
+  Object.assign(victim, { x: -12, y: 0, z: 18.5, health: 100, invulnerableUntil: 0, respawnAt: 0, vx: 0, vy: 0, vz: 0 });
+  await expect(a.getByTestId('equipped-weapon')).toHaveText('Siege cannon'); await a.screenshot({ path: testInfo.outputPath('siege-cannon-ready.png') });
   await a.keyboard.press('Space');
   await expect.poll(() => seenB.history.some(s => s.projectiles.some(p => p.kind === 'cannonball'))).toBe(true);
   await expect.poll(() => seenB.latest?.players.find(p => p.id === victim.id)?.health ?? 100).toBeLessThan(100);

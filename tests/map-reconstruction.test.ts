@@ -29,7 +29,7 @@ describe('proportional symmetrical island definition', () => {
   it('does not leave obsolete tunnel, forest or central-block occlusion', () => {
     expect(clearShot({x:0,y:1,z:-12},{x:0,y:1,z:12},.1)).toBe(true);
     expect(groundHeight(0,-43)).toBe(1.2); // new north deck, never an old tunnel
-    expect(WALLS.every(w=>['barrier','rail','boundary'].includes(w.style!))).toBe(true);
+    expect(WALLS.every(w=>['barrier','rail','boundary','tunnel'].includes(w.style!))).toBe(true);
   });
   it('contains boosted airborne karts at rounded corners', () => {
     const k={x:54,y:4,z:54,yaw:Math.PI/4,vx:25,vy:0,vz:25};

@@ -1,0 +1,64 @@
+import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
+import { IslandBackdrop, WATERFALL_SITES } from '../client/src/maps/island-backdrop.js';
+import { FOREST_TREES } from '../client/src/maps/alien-forest.js';
+import { rockTextures } from '../client/src/maps/surface-textures.js';
+import { groundHeight, TUNNELS } from '../shared/src/arena.js';
+import { moveKart, NEUTRAL, resolveCeilings } from '../shared/src/movement.js';
+import { clearShot } from '../shared/src/aim.js';
+import { wallHit } from '../server/src/collisions/projectile.js';
+import { activate } from '../server/src/weapons/activate.js';
+import { stepProjectiles } from '../server/src/weapons/projectiles.js';
+import { explode } from '../server/src/combat/damage.js';
+import { duel, equip } from './helpers.js';
+
+describe('alien world geometry and quality budgets', () => {
+  it('uses small original repeatable color and normal maps', () => {
+    const textures = rockTextures();
+    for (const map of Object.values(textures)) { expect(map.image.width).toBe(128); expect(map.image.height).toBe(128); expect(map.wrapS).toBe(THREE.RepeatWrapping); map.dispose(); }
+  });
+  it('retains all scenic layers while reducing forest density and cloud triangles', () => {
+    const world = new IslandBackdrop();
+    const trunks = world.group.getObjectByName('giant-tree-trunks') as THREE.InstancedMesh;
+    const clouds = world.group.getObjectByName('drifting-clouds') as THREE.InstancedMesh;
+    expect(trunks.count).toBe(FOREST_TREES); expect(clouds.geometry.index!.count / 3 * clouds.count).toBe(192);
+    expect(world.group.getObjectByName('floating-rock-formations')).toBeInstanceOf(THREE.InstancedMesh);
+    expect(world.group.getObjectByName('bioluminescent-blossoms')).toBeInstanceOf(THREE.InstancedMesh);
+    expect(world.group.getObjectByName('valley-haze')).toBeInstanceOf(THREE.Points);
+    for (const site of WATERFALL_SITES) expect(site.height).toBeGreaterThanOrEqual(112);
+    world.update(1, new THREE.Vector3(), true); expect(trunks.count).toBe(FOREST_TREES / 3); expect(clouds.visible).toBe(true);
+    expect(world.group.getObjectByName('distant-waterfalls')!.visible).toBe(true);
+    world.update(2, new THREE.Vector3(), false); expect(trunks.count).toBe(FOREST_TREES);
+    const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
+    world.group.traverse(object => { if (object instanceof THREE.Mesh || object instanceof THREE.Points) { geometries.add(object.geometry); for (const m of Array.isArray(object.material) ? object.material : [object.material]) { materials.add(m); for (const value of Object.values(m)) if (value instanceof THREE.Texture) textures.add(value); } if (object instanceof THREE.InstancedMesh) object.dispose(); } });
+    for (const g of geometries) g.dispose(); for (const m of materials) m.dispose(); for (const t of textures) t.dispose();
+  });
+});
+describe('playable tunnel and combat integration', () => {
+  it.each(TUNNELS.filter(w => w.height < 1))('drives through the open portal at $x,$z while roof hits stop jumps', roof => {
+    const kart = { x: roof.x, y: 1.2, z: roof.z - 6, yaw: 0, vx: 0, vy: 0, vz: 10 };
+    for (let i = 0; i < 45; i++) { moveKart(kart, { ...NEUTRAL, throttle: 1 }); expect(kart.x).toBe(roof.x); expect(kart.y).toBeGreaterThanOrEqual(groundHeight(kart.x, kart.z)); }
+    expect(kart.z).toBeGreaterThan(roof.z + 5);
+    Object.assign(kart, { z: roof.z, y: 4, vy: 5 }); resolveCeilings(kart); expect(kart.y).toBeCloseTo(roof.base! - 1.8); expect(kart.vy).toBe(0);
+  });
+  it('allows low shots through the portal and stops shots against its ceiling', () => {
+    expect(clearShot({ x: -40, y: 2, z: 2 }, { x: -40, y: 2, z: 14 })).toBe(true);
+    expect(wallHit({ x: -40, y: 3, z: 8 }, { x: -40, y: 7, z: 8 }, .44)).not.toBeNull();
+  });
+  it.each(['machineGun', 'rocket', 'homing', 'scatter', 'cannon', 'bullets', 'blastMissile'] as const)('%s cannot sweep through an overhead tunnel roof', weapon => {
+    const { world, a, b } = duel(); b.x = 30; equip(a, weapon); activate(world, a);
+    const shot = world.projectiles.values().next().value!;
+    Object.assign(shot, { x: -40, y: 4.2, z: 8, vx: 0, vy: 150, vz: 0, target: null });
+    // Prevent homing reacquisition from changing the deliberately vertical sweep.
+    b.health = 0; world.time += 1 / 60; stepProjectiles(world);
+    expect(world.projectiles.has(shot.id)).toBe(false); expect(shot.y).toBeLessThan(5.2);
+    if (shot.blast) expect(world.events.some(e => e.kind === 'explosion' && e.weapon === weapon)).toBe(true);
+  });
+  it('blocks cannon splash across a tunnel ceiling while affecting an exposed enemy below it', () => {
+    const { world, a, b } = duel(); equip(a, 'cannon'); activate(world, a);
+    const ball = world.projectiles.values().next().value!;
+    Object.assign(ball, { x: -40, y: 4.4, z: 8 }); Object.assign(b, { x: -40, y: 5.8, z: 8 });
+    explode(world, ball); expect(b.health).toBe(100);
+    b.y = 1.2; explode(world, ball); expect(b.health).toBeLessThan(100); expect(a.health).toBe(100);
+  });
+});

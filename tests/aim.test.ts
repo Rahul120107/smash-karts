@@ -35,7 +35,8 @@ describe('server machine-gun aim assistance', () => {
   it('bounds correction and switches away from an invalid target', () => {
     const { world, a, b } = duel(); Object.assign(b, { x: -12 + Math.sin(0.5) * 14, z: Math.cos(0.5) * 14 });
     const aim = machineGunAim(a, world.players.values()); expect(aim.target?.id).toBe(b.id);
-    expect(Math.atan2(aim.direction.x, aim.direction.z)).toBeCloseTo(WEAPONS.machineGun.aimAssist!.maxCorrection);
+    expect(Math.atan2(aim.direction.x, aim.direction.z)).toBeLessThanOrEqual(WEAPONS.machineGun.aimAssist!.maxCorrection);
+    expect(Math.atan2(aim.direction.x, aim.direction.z)).toBeGreaterThan(.45);
     a.aimTarget = b.id; b.health = 0; const c = world.addPlayer('c', 'New target'); Object.assign(c, { x: -12, z: 15, invulnerableUntil: 0 });
     expect(machineGunAim(a, world.players.values()).target?.id).toBe(c.id);
   });

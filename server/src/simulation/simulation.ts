@@ -6,12 +6,13 @@ import { AttackSequences } from '../weapons/sequences.js';
 import { stepProjectiles } from '../weapons/projectiles.js';
 import { collectPickups } from './pickups.js';
 import type { CombatWorld } from './world.js';
-import { machineGunAim } from '../../../shared/src/aim.js';
+import { weaponAim } from '../../../shared/src/aim.js';
+import { WEAPONS } from '../../../shared/src/weapons.js';
 import { stepContactAttacks } from '../combat/contact.js';
 import { matchWinners } from '../../../shared/src/match.js';
 import { stepLavaHazard } from './hazards.js';
 
-interface Controls { queue: Input[]; last: Input; lastReceived: number; highest: number; fireDown: boolean; pressed: boolean }
+interface Controls { queue: Input[]; last: Input; lastReceived: number; highest: number; fireDown: boolean; pressed: boolean; firePress: number }
 export class Simulation implements CombatWorld {
   time = 0; tick = 0; phase: Snapshot['phase'] = 'lobby';
   players = new Map<string, PlayerState>(); projectiles = new Map<number, Projectile>();
@@ -31,7 +32,7 @@ export class Simulation implements CombatWorld {
     this.colorCursor = (COLORS.indexOf(color) + 1) % COLORS.length;
     const p: PlayerState = { id, name, color, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0,
       health: CONFIG.maxHealth, score: 0, deaths: 0, weapon: null, ammo: 0, nextFire: 0, shieldUntil: 0, boostUntil: 0, orbitUntil: 0, invulnerableUntil: 0, respawnAt: 0, ack: 0 };
-    this.players.set(id, p); this.controls.set(id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0, fireDown: false, pressed: false });
+    this.players.set(id, p); this.controls.set(id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0, fireDown: false, pressed: false, firePress: 0 });
     this.spawn(p, this.phase === 'playing' ? undefined : this.players.size - 1); return p;
   }
   removePlayer(id: string) { const player = this.players.get(id); if (player) this.attacks.cancel(player); this.players.delete(id); this.controls.delete(id); for (const [key, p] of this.projectiles) if (p.owner === id) this.projectiles.delete(key); }
@@ -51,7 +52,7 @@ export class Simulation implements CombatWorld {
     let index = 0;
     for (const p of this.players.values()) {
       p.score = 0; p.deaths = 0; p.ack = 0;
-      this.controls.set(p.id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0, fireDown: false, pressed: false });
+      this.controls.set(p.id, { queue: [], last: { ...NEUTRAL }, lastReceived: 0, highest: 0, fireDown: false, pressed: false, firePress: 0 });
       this.spawn(p, index++);
     }
   }
@@ -73,7 +74,13 @@ export class Simulation implements CombatWorld {
       const c = this.controls.get(p.id)!;
       const command = c.queue.shift();
       c.pressed = false;
-      if (command) { c.pressed = command.fire && !c.fireDown; c.fireDown = command.fire; c.last = command; p.ack = command.seq; }
+      if (command) {
+        // Monotonic press IDs survive taps between ticks and movement queue trimming.
+        // Legacy clients still use a held-key edge; neither path bypasses weapon cooldowns.
+        c.pressed = command.firePress === undefined ? command.fire && !c.fireDown : command.firePress > c.firePress;
+        c.firePress = Math.max(c.firePress, command.firePress ?? c.firePress);
+        c.fireDown = command.fire; c.last = command; p.ack = command.seq;
+      }
       const input = this.time - c.lastReceived <= CONFIG.inputTimeout ? c.last : NEUTRAL;
       if (p.health <= 0) { this.attacks.cancel(p); if (this.time >= p.respawnAt) { this.spawn(p); this.emit({ kind: 'respawn', player: p.id, x: p.x, y: p.y + 0.3, z: p.z }); } continue; }
       const wallImpact = moveKart(p, input, this.time < p.boostUntil);
@@ -87,7 +94,7 @@ export class Simulation implements CombatWorld {
     stepLavaHazard(this);
     // Aim uses every kart's current tick position, after movement/contact resolution.
     for (const p of alive.filter(k => k.health > 0)) {
-      p.aimTarget = p.weapon === 'machineGun' ? machineGunAim(p, alive, this.time).target?.id ?? null : null;
+      p.aimTarget = p.weapon && WEAPONS[p.weapon].aimAssist ? weaponAim(p, alive, this.time, p.weapon).target?.id ?? null : null;
       const c = this.controls.get(p.id)!;
       if (this.time - c.lastReceived <= CONFIG.inputTimeout && c.pressed) this.attacks.begin(this, p);
       this.attacks.step(this, p);

@@ -3,6 +3,7 @@ import { Simulation } from '../server/src/simulation/simulation.js';
 import { CONFIG } from '../shared/src/config.js';
 import { WEAPONS, WEAPON_IDS } from '../shared/src/weapons.js';
 import { encodeSnapshot } from '../server/src/networking/serialization.js';
+import { writeFile } from 'node:fs/promises';
 let seed = 12345;
 const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 0x100000000;
 const world = new Simulation(180, random);
@@ -20,7 +21,7 @@ for (let tick = 0; tick < 180 * CONFIG.tickRate; tick++) {
       player.weapon = weapon; player.ammo = WEAPONS[weapon].ammo;
     }
     // Alternate press/release so replacement pickups start complete server bursts.
-    world.enqueue(id, [{ seq: tick + 1, throttle: 1, steer: Math.sin(tick / 110 + index) * 0.8, fire: tick % 2 === 0, drift: tick % 240 < 60 }]);
+    world.enqueue(id, [{ seq: tick + 1, throttle: 1, steer: Math.sin(tick / 110 + index) * 0.8, fire: tick % 2 === 0, firePress: Math.floor(tick / 2) + 1, drift: tick % 240 < 60 }]);
   }
   world.step(); peakProjectiles = Math.max(peakProjectiles, world.projectiles.size);
   if (tick % 3 === 0) {
@@ -31,8 +32,10 @@ for (let tick = 0; tick < 180 * CONFIG.tickRate; tick++) {
 }
 for (const player of world.players.values()) if (![player.x, player.y, player.z, player.vx, player.vy, player.vz].every(Number.isFinite)) throw new Error('Simulation produced non-finite state.');
 const elapsed = performance.now() - started; samples.sort((a, b) => a - b);
-console.log(JSON.stringify({ simulatedSeconds: world.time, players: world.players.size, wallMilliseconds: Math.round(elapsed),
+const report = JSON.stringify({ simulatedSeconds: world.time, players: world.players.size, wallMilliseconds: Math.round(elapsed),
   tickAndSnapshotP95Milliseconds: Number(samples[Math.floor(samples.length * 0.95)]!.toFixed(3)),
   peakProjectiles, averageSnapshotBytes: Math.round(totalBytes / snapshots),
   estimatedOutboundKBpsPerEightPlayerRoom: Math.round(totalBytes / snapshots * CONFIG.snapshotRate * 8 / 1024),
-  totalEliminations: [...world.players.values()].reduce((sum, p) => sum + p.score, 0), phase: world.phase }, null, 2));
+  totalEliminations: [...world.players.values()].reduce((sum, p) => sum + p.score, 0), phase: world.phase }, null, 2);
+console.log(report);
+if (process.argv.includes('--alien-upgrade')) await writeFile('docs/performance-alien-simulation.json', report + '\n');

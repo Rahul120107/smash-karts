@@ -3,14 +3,15 @@ import { WEAPONS } from '../../../shared/src/weapons.js';
 import type { PlayerState, Vec3, WeaponId } from '../../../shared/src/types.js';
 import type { CombatWorld } from '../simulation/world.js';
 import { terrainHit, wallHit } from '../collisions/projectile.js';
-import { clearShot, machineGunAim } from '../../../shared/src/aim.js';
+import { clearShot, weaponAim } from '../../../shared/src/aim.js';
+import { weaponMuzzle } from '../../../shared/src/weapon-physics.js';
 import type { Projectile } from '../../../shared/src/types.js';
 
 type Handler = (world: CombatWorld, player: PlayerState, weapon: WeaponId) => Vec3 | void;
 function launch(world: CombatWorld, p: PlayerState, weapon: WeaponId): Vec3 {
   const w = WEAPONS[weapon];
   let muzzle: Vec3 = { x: p.x, y: p.y + 0.85, z: p.z };
-  const assisted = weapon === 'machineGun' ? machineGunAim(p, world.players.values(), world.time) : null;
+  const assisted = w.aimAssist ? weaponAim(p, world.players.values(), world.time, weapon) : null;
   if (assisted) p.aimTarget = assisted.target?.id ?? null;
   let target: string | null = null;
   if (weapon === 'homing') {
@@ -26,20 +27,22 @@ function launch(world: CombatWorld, p: PlayerState, weapon: WeaponId): Vec3 {
   for (const spread of w.spread) {
     const aim = assisted?.direction;
     const yaw = (aim ? Math.atan2(aim.x, aim.z) : p.yaw) + spread + (assisted ? (world.random() * 2 - 1) * w.aimAssist!.spread : 0);
-    const pitch = aim ? Math.asin(aim.y) : 0, fx = Math.sin(yaw) * Math.cos(pitch), fz = Math.cos(yaw) * Math.cos(pitch);
+    const pitch = aim ? Math.asin(aim.y) : weapon === 'cannon' ? Math.atan2(w.launchVelocityY!, w.speed) : 0;
+    const direction = { x: Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: Math.cos(yaw) * Math.cos(pitch) };
+    // Cannon speed is its horizontal launch speed; the barrel reflects its elevation.
+    const fx = Math.sin(yaw) * (weapon === 'cannon' ? 1 : Math.cos(pitch)), fz = Math.cos(yaw) * (weapon === 'cannon' ? 1 : Math.cos(pitch));
     const behind = weapon === 'mine';
-    const offset = behind ? -1.8 : 1.35;
-    const x = p.x + fx * offset, z = p.z + fz * offset;
+    const tip = weaponMuzzle(p, weapon, direction), { x, z } = tip;
     const projectile: Projectile = {
       id: world.nextProjectileId(), kind: w.kind!, owner: p.id, weapon, x, z,
-      y: behind ? groundHeight(x, z) + w.radius + 0.03 : p.y + 0.85,
+      y: behind ? groundHeight(x, z) + w.radius + 0.03 : tip.y,
       vx: fx * w.speed + (weapon === 'bomb' ? p.vx * 0.45 : 0),
       vz: fz * w.speed + (weapon === 'bomb' ? p.vz * 0.45 : 0),
       vy: w.launchVelocityY ?? Math.sin(pitch) * w.speed, radius: w.radius, damage: w.damage, blast: w.blast,
       expires: world.time + w.lifetime, armedAt: world.time + (behind ? 0.7 : 0), target,
     };
     if (assisted) {
-      projectile.maxRange = w.aimAssist!.range; projectile.travelled = Math.abs(offset);
+      projectile.maxRange = w.aimAssist!.range; projectile.travelled = Math.hypot(x - p.x, tip.y - p.y - .85, z - p.z);
       projectile.origin = { x: p.x, y: p.y + 0.85, z: p.z };
       projectile.expires = world.time + Math.min(w.lifetime, w.aimAssist!.range / w.speed);
     }

@@ -1,4 +1,4 @@
-﻿# CROSSFIRE KARTS — DEVELOPMENT PROGRESS
+# CROSSFIRE KARTS — DEVELOPMENT PROGRESS
 
 Overall verified completion: **97%**
 
@@ -90,4 +90,3 @@ measurements are configurable assumptions, not verified live-game constants.
 Render Free configuration, existing deployment architecture, rooms, FFA/eight-player
 capacity, mobile controls and UI architecture are preserved. No paid services were
 provisioned. Git delivery is confirmed; deployment itself is not claimed.
-

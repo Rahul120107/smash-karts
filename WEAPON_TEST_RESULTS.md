@@ -92,3 +92,11 @@ audio listening, sustained worst-case GPU/WAN testing, the absent map reference
 image comparison and live Render deployment acceptance. Windows production smoke
 invokes the SIGTERM handler via IPC; actual Linux signal delivery is not claimed.
 No 100% reference-accuracy statement is made.
+
+## Git delivery
+
+Implementation commit: `d005b4f8aa1d3de587c2e0074ccdddb18e800b63`.
+Fetched the authorized remote, confirmed no incoming divergence, and pushed
+normally to `https://github.com/Rahul120107/smash-karts.git`, `main -> main`.
+Existing history was preserved; no force push or Render service changes.
+Subsequent progress/report-only commits contain delivery metadata, not gameplay changes.

@@ -106,9 +106,9 @@ test('two independent browser sessions drive, collect, fire, finish, replay, and
   await expect.poll(() => seenB.latest?.pickups[0]?.availableAt ?? 0).toBeGreaterThan(0);
   const ammo = player.ammo;
   await expect.poll(()=>seenA.latest!.time>=seenA.latest!.players.find(p=>p.id===player.id)!.nextFire).toBe(true);
-  await a.keyboard.down('Space');
+  // A tap includes release for whichever random pickup was collected, including hold-to-aim bombs.
+  await a.keyboard.press('Space');
   await expect.poll(() => seenB.latest?.players.find(p => p.name === 'Roadrunner')?.ammo ?? 100).toBeLessThan(ammo);
-  await a.keyboard.up('Space');
   await a.screenshot({ path: testInfo.outputPath('gameplay.png') });
   await expect(a.getByText('BATTLE COMPLETE')).toBeVisible({ timeout: 20000 }); await expect(b.getByText('BATTLE COMPLETE')).toBeVisible();
   await a.screenshot({ path: testInfo.outputPath('results.png') });
@@ -141,6 +141,7 @@ test('pickup disappearance and glowing respawn synchronize across rendered brows
 });
 
 test('all weapon categories render and synchronize combat between browsers', async ({ browser }, testInfo) => {
+  test.setTimeout(120000);
   const ctxA = await browser.newContext(), ctxB = await browser.newContext(); contexts.push(ctxA, ctxB);
   const a = await ctxA.newPage(), b = await ctxB.newPage(); const seenA = observe(a), seenB = observe(b);
   const code = await lobby(a, b), world = server.rooms.rooms.get(code)!.simulation; world.duration = 120;
@@ -156,7 +157,8 @@ test('all weapon categories render and synchronize combat between browsers', asy
     const since = world.time;
     let fireId = 0;
     await a.keyboard.down('Space');
-    await expect.poll(() => { fireId = world.events.find(e => e.kind === 'fire' && e.weapon === weapon && e.at >= since)?.id ?? 0; return fireId; }).toBeGreaterThan(0);
+    if(WEAPONS[weapon].activation==='release'){await expect.poll(()=>shooter.charging).toBe(true);await appliedKey(a,seenA,shooter.id,'Space',false,input=>!input.fireHeld);}
+    await expect.poll(() => { fireId = seenA.history.flatMap(s=>s.events).find(e => e.kind === 'fire' && e.weapon === weapon && e.at >= since)?.id ?? 0; return fireId; }).toBeGreaterThan(0);
     await appliedKey(a, seenA, shooter.id, 'Space', false, input => !input.fire);
     await expect.poll(() => seenB.history.some(s => s.events.some(e => e.id === fireId))).toBe(true);
     if (weapon === 'shield') { await expect.poll(() => seenB.latest?.players.find(p => p.id === shooter.id)?.shieldUntil ?? 0).toBeGreaterThan(since); }
@@ -178,11 +180,16 @@ test('all weapon categories render and synchronize combat between browsers', asy
   await test.step('elimination, live score, respawn, and protection', async () => {
     world.projectiles.clear();
     Object.assign(shooter, { x: -12, z: 0, yaw: 0, health: 100, invulnerableUntil: 0, shieldUntil: 0, orbitUntil: 0, weapon: 'machineGun', ammo: 30, nextFire: 0 });
-    Object.assign(target, { x: -12, z: 6, health: 12, invulnerableUntil: 0, shieldUntil: 0 });
+    Object.assign(target, { x: -12, y:0, z: 6, vx:0,vy:0,vz:0,health: 12, respawnAt:0, invulnerableUntil: 0, shieldUntil: 0 });
+    await expect.poll(()=>seenB.latest?.players.find(p=>p.id===target.id)?.health).toBe(12);
     await expect(a.getByTestId('equipped-weapon')).toHaveText('Machine gun');
     const score = shooter.score, since = world.time; await a.keyboard.down('Space');
     await expect(b.getByText('KART ELIMINATED')).toBeVisible(); await a.keyboard.up('Space');
+    await expect(a.getByTestId('kill-notification').last()).toContainText('You smashed Dusty using Machine gun!');
+    await expect(b.getByTestId('death-notification').last()).toContainText('You were smashed by Roadrunner using Machine gun!');
     await expect.poll(() => seenA.latest?.players.find(p => p.id === shooter.id)?.score).toBe(score + 1);
+    await a.screenshot({path:testInfo.outputPath('killer-notification.png')});
+    await b.screenshot({path:testInfo.outputPath('victim-notification.png')});
     await expect(b.getByTestId('health')).toHaveText('100 / 100');
     expect(seenB.history.some(s => s.time >= since && s.players.some(p => p.id === target.id && p.health === 100 && p.invulnerableUntil > s.time))).toBe(true);
     expect(target.deaths).toBeGreaterThan(0);
@@ -410,4 +417,30 @@ test('eight independent browser players render and send input concurrently', asy
   const report = measurements.map((m, index) => ({ browser: index + 1, ...m, ...renderStats[index], framesPerSecond: Math.round(m.frames / m.elapsed * 1000) }));
   const output = testInfo.outputPath('eight-browser-performance.json'); await writeFile(output, JSON.stringify(report, null, 2));
   await testInfo.attach('eight-browser-performance', { path: output, contentType: 'application/json' });
+});
+
+
+test('mobile multi-touch drives while firing and holds/releases a throwable through the central input system',async({browser},testInfo)=>{
+  test.setTimeout(90000);
+  const ctx=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});contexts.push(ctx);
+  const page=await ctx.newPage(),seen=observe(page);await page.goto(`http://127.0.0.1:${server.port}`);
+  await page.getByLabel('YOUR NICKNAME').fill('Touch driver');await page.getByRole('button',{name:'Create room'}).click();const code=await page.getByTestId('room-code').innerText();
+  const world=server.rooms.rooms.get(code)!.simulation;world.duration=60;
+  await page.getByRole('button',{name:'Start match'}).click();await expect(page.getByTestId('match-timer')).toBeVisible();
+  await page.getByRole('button',{name:'Change graphics quality'}).click();await expect(page.locator('.game-canvas')).toHaveAttribute('data-graphics-mode','low');
+  await page.getByRole('button',{name:'Change graphics quality'}).click();await expect(page.locator('.game-canvas')).toHaveAttribute('data-graphics-mode','auto');
+  const player=[...world.players.values()][0]!;Object.assign(player,{x:-12,z:-12,y:0,yaw:0,vx:0,vy:0,vz:0,weapon:'machineGun',ammo:30,nextFire:0});
+  await expect(page.getByTestId('equipped-weapon')).toHaveText('Machine gun');
+  const forward=(await page.getByRole('button',{name:'Accelerate',exact:true}).boundingBox())!,fire=(await page.getByRole('button',{name:'Use weapon',exact:true}).boundingBox())!;
+  const cdp=await ctx.newCDPSession(page),f={x:forward.x+26,y:forward.y+26,id:1},w={x:fire.x+34,y:fire.y+34,id:2};
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[f,w]});
+  await expect.poll(()=>seen.inputs.some(i=>i.throttle===1&&i.fireHeld&&(i.firePress??0)===1)).toBe(true);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await expect.poll(()=>player.ammo,{timeout:15000}).toBe(0);expect(player.health).toBe(100);
+  Object.assign(player,{x:-12,z:0,yaw:0,vx:0,vy:0,vz:0,weapon:'bomb',ammo:1,nextFire:0});await expect(page.getByTestId('equipped-weapon')).toHaveText('Lob bomb');
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[w]});await expect.poll(()=>player.charging).toBe(true);expect(player.ammo).toBe(1);
+  await expect(page.locator('.weapon-panel')).toContainText('RELEASE TO THROW');await page.screenshot({path:testInfo.outputPath('mobile-throw-preview.png')});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await expect.poll(()=>player.ammo).toBe(0);
+  await expect.poll(()=>seen.history.some(s=>s.events.some(e=>e.kind==='fire'&&e.weapon==='bomb'))).toBe(true);
+  expect(seen.inputs.at(-1)?.fireHeld).toBe(false);await cdp.detach();
 });

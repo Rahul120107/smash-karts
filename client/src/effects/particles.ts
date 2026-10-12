@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { groundHeight } from '../../../shared/src/arena.js';
 import { drivingTelemetry } from '../../../shared/src/movement.js';
 import type { GameEvent, KartState, Projectile, Vec3 } from '../../../shared/src/types.js';
+import { orbitPosition } from '../../../shared/src/orbit.js';
 import { WEAPONS } from '../../../shared/src/weapons.js';
 interface Particle { position: THREE.Vector3; velocity: THREE.Vector3; color: THREE.Color; life: number; total: number; size: number; gravity: number; growth: number }
 interface Decal { x: number; y: number; z: number; yaw: number; life: number; size: number; color: THREE.Color }
@@ -36,7 +37,7 @@ export class Particles {
     if (event.kind === 'fire' && (event.weapon === 'shield' || event.weapon === 'boost' || event.weapon === 'mine')) return;
     const explosive = event.kind === 'explosion' || event.kind === 'elimination';
     const cannon = event.weapon === 'cannon';
-    const color = explosive ? cannon ? 0xffd29a : event.weapon === 'blastMissile' ? 0xff747c : 0xffad4c : event.kind === 'respawn' || event.kind === 'shield' || event.kind === 'shieldImpact' ? 0x68ddff : event.kind === 'pickup' || event.kind === 'fire' && event.weapon === 'orbit' ? event.weapon ? WEAPONS[event.weapon].color : 0xffd963 : event.kind === 'boost' ? 0x64ffcf : 0xfff1b5;
+    const color = event.weapon === 'orbit' ? 0xd7a4ff : explosive ? cannon ? 0xffd29a : event.weapon === 'blastMissile' ? 0xff747c : 0xffad4c : event.kind === 'respawn' || event.kind === 'shield' || event.kind === 'shieldImpact' ? 0x68ddff : event.kind === 'pickup' ? event.weapon ? WEAPONS[event.weapon].color : 0xffd963 : event.kind === 'boost' ? 0x64ffcf : 0xfff1b5;
     const fire = event.kind === 'fire', count = explosive ? 22 : fire ? cannon ? 8 : 4 : event.kind === 'collision' ? 5 : 12;
     for (let i = 0; i < count; i++) this.add(event, color, explosive ? 0.16 + Math.random() * 0.25 : fire ? 0.1 : 0.065, explosive ? 0.65 : fire ? 0.09 : 0.4, explosive ? 12 : fire ? 2 : 5);
     if (explosive) for (let i = 0; i < 10; i++) this.add(event, 0x75808b, 0.18, 0.85, 4, -1.2, 1.8);
@@ -46,6 +47,10 @@ export class Particles {
       const ring = this.rings[this.ringIndex++ % this.rings.length]!;
       Object.assign(ring, { x: event.x, y: groundHeight(event.x, event.z) + 0.05, z: event.z, life: 0.65, size: explosive ? event.radius ?? 3 : 2.5 }); ring.color.setHex(color);
     }
+  }
+  orbit(kart: KartState, time: number, dt: number) {
+    if(Math.random()>Math.min(1,dt*18))return;
+    for(let i=0;i<WEAPONS.orbit.orbit!.count;i++)this.add(orbitPosition(kart,time,i),0xc181ff,.08,.28,.1,0,.5);
   }
   boost(kart: KartState, dt: number) {
     if (Math.random() > Math.min(1, dt * 24)) return;

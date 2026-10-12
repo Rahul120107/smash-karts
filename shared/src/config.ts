@@ -2,6 +2,7 @@ export const CONFIG = {
   tickRate: 60, snapshotRate: 20, matchDuration: 180, capacity: 8,
   maxHealth: 100, respawnDelay: 3, spawnProtection: 2,
   pickupDelay: 10, kartRadius: 0.85, kartHeight: 1.8, maxQueue: 18, inputTimeout: 0.25,
+  chargeInputTimeout: 1.5,
   acceleration: 29, braking: 45, reverseAcceleration: 19,
   maxSpeed: 21, reverseSpeed: 8, boostMultiplier: 1.55, steering: 2.55,
   gravity: 24, roomIdleSeconds: 600,

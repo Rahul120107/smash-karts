@@ -24,13 +24,13 @@ describe('reference-informed ammunition and activation', () => {
     }
     expect(a.health).toBe(100);
   });
-  it('rejects a fresh rocket press during cooldown and allows it once the cooldown expires', () => {
+  it('ignores repeated rocket presses while the original three-shot sequence completes', () => {
     const { world, a } = duel(); equip(a, 'rocket');
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2 }, { ...NEUTRAL, seq: 3, fire: true }]);
     advance(world, 3 * DT); expect(a.ammo).toBe(2);
-    advance(world, .7); expect(a.ammo).toBe(2);
+    advance(world, .7); expect(a.ammo).toBe(1);
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 4 }, { ...NEUTRAL, seq: 5, fire: true }]); world.step(); world.step();
-    expect(a.ammo).toBe(1);
+    expect(a.ammo).toBe(1); advance(world,.7); expect(a.ammo).toBe(0); expect(a.attacking).toBe(false);
   });
   it('heavy bullets assist within their cone and deal authoritative direct damage', () => {
     const { world, a, b } = duel(); world.random = () => .5; equip(a, 'bullets'); activate(world, a);
@@ -54,10 +54,10 @@ describe('server-owned contact power-ups', () => {
   it.each(['orbit', 'shield'] as const)('%s damages opponents once on unobstructed contact, never its owner', id => {
     const { world, a, b } = duel(); b.z = 1.8; equip(a, id);
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, fire: true }]); world.step();
-    expect(b.health).toBe(0); expect(a.health).toBe(100); expect(a.score).toBe(1); expect(a.weapon).toBeNull();
-    stepContactAttacks(world); expect(a.score).toBe(1);
-    expect(world.snapshot('ABCDE', a.id, 8).players.find(p => p.id === a.id)).toMatchObject(id === 'orbit' ? { orbitUntil: world.time + 5 } : { shieldUntil: world.time + 5 });
-    advance(world, CONFIG.respawnDelay + .1); expect(b.health).toBe(100); expect(b.invulnerableUntil).toBeGreaterThan(world.time);
+    expect(b.health).toBe(id==='orbit'?62:0); expect(a.health).toBe(100); expect(a.score).toBe(id==='orbit'?0:1); expect(a.weapon).toBeNull();
+    stepContactAttacks(world); expect(a.score).toBe(id==='orbit'?0:1);
+    expect(world.snapshot('ABCDE', a.id, 8).players.find(p => p.id === a.id)).toMatchObject(id === 'orbit' ? { orbitUntil: world.time + WEAPONS.orbit.duration } : { shieldUntil: world.time + 5 });
+    if(id==='shield'){advance(world, CONFIG.respawnDelay + .1); expect(b.health).toBe(100); expect(b.invulnerableUntil).toBeGreaterThan(world.time);}
   });
   it('orbit contact respects duration, height separation, line of sight and spawn protection', () => {
     const { world, a, b } = duel(); equip(a, 'orbit'); activate(world, a); b.z = 1.8; b.invulnerableUntil = 2;
@@ -76,8 +76,8 @@ describe('server-owned contact power-ups', () => {
   });
   it('simultaneous orbit collisions are resolved fairly independent of join order', () => {
     const { world, a, b } = duel(); b.z = 1.8;
-    equip(a, 'orbit'); activate(world, a); equip(b, 'orbit'); activate(world, b);
-    stepContactAttacks(world); expect(a.health).toBe(0); expect(b.health).toBe(0); expect(a.score).toBe(1); expect(b.score).toBe(1);
+    world.time=Math.PI/6/WEAPONS.orbit.orbit!.speed; equip(a, 'orbit'); activate(world, a); equip(b, 'orbit'); activate(world, b);
+    for(let i=0;i<3;i++){stepContactAttacks(world);world.time+=Math.PI*2/WEAPONS.orbit.orbit!.speed;} expect(a.health).toBe(0); expect(b.health).toBe(0); expect(a.score).toBe(1); expect(b.score).toBe(1);
     expect(a.deaths).toBe(1); expect(b.deaths).toBe(1);
   });
   it('bounds sustained shield contact feedback and immediately hits when protection expires', () => {

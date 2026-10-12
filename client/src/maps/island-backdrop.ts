@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { LAVA } from '../../../shared/src/arena.js';
 import { batchStatic } from '../game/batch.js';
+import { FantasySkylands } from './skylands.js';
 import { AlienForest } from './alien-forest.js';
 import { rockTextures } from './surface-textures.js';
 
@@ -30,7 +31,7 @@ function cliffGeometry(radius: number, height: number, seed: number) {
     return [Math.sin(a) * r, levels[level]! * height, Math.cos(a) * r];
   };
   const triangle = (a: number[], b: number[], c: number[], tint: THREE.Color) => {
-    positions.push(...a, ...b, ...c); for (const p of [a, b, c]) { colors.push(tint.r, tint.g, tint.b); uv.push((p[0]! + p[2]!) * .08, p[1]! * .06); }
+    positions.push(...a, ...b, ...c); for (const p of [a, b, c]) { colors.push(tint.r, tint.g, tint.b); uv.push((p[0]! + p[2]!) * .012, p[1]! * .008); }
   };
   for (let l = 1; l < levels.length; l++) for (let i = 0; i < sides; i++) {
     const tint = palette[l - 1]!.clone().multiplyScalar(.91 + .12 * Math.sin(i * 2 + seed));
@@ -55,6 +56,7 @@ export class IslandBackdrop {
   private spray: THREE.Points;
   private motes: THREE.Points;
   private forest: AlienForest;
+  private skylands: FantasySkylands;
   constructor() {
     this.group.name = 'alien-world-backdrop';
     const ocean = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400), new THREE.ShaderMaterial({
@@ -121,6 +123,7 @@ export class IslandBackdrop {
       const satellite = new THREE.Mesh(cliffGeometry(11 + i % 3 * 3, 25 + i % 2 * 14, i + 9), rockMaterial);
       satellite.position.set(site.x + Math.cos(site.yaw) * 39, -3, site.z - Math.sin(site.yaw) * 39); landscape.add(satellite);
     }
+    this.skylands=new FantasySkylands(fallMaterial);this.group.add(this.skylands.group);waterfalls.add(...this.skylands.falls.children);
     batchStatic(landscape); batchStatic(waterfalls); this.group.add(landscape, waterfalls);
 
     // Hazy outer mountain ring: one instanced geometry and 24 original peaks.
@@ -189,24 +192,6 @@ export class IslandBackdrop {
     this.motes = new THREE.Points(moteGeometry, new THREE.PointsMaterial({ color: 0xe6fff3, size: .16, transparent: true, opacity: .45, depthWrite: false })); this.motes.name = 'sea-spray'; this.group.add(this.motes);
     this.addCoast();
     this.forest = new AlienForest(this.clock); this.group.add(this.forest.group);
-    const floatingGeometry = new THREE.ConeGeometry(1, 1, 12, 3), floatPositions = floatingGeometry.getAttribute('position'), floatColors: number[] = [];
-    for (let i = 0; i < floatPositions.count; i++) {
-      const x = floatPositions.getX(i), y = floatPositions.getY(i), z = floatPositions.getZ(i);
-      const rough = 1 + Math.sin(Math.atan2(x, z) * 5 + y * 12) * .17;
-      floatPositions.setXYZ(i, x * rough, y + Math.sin(x * 4 + z * 3) * .05, z * rough);
-      const tint = new THREE.Color(y < -.49 ? 0x408e76 : 0x89a6b1); floatColors.push(tint.r, tint.g, tint.b);
-    }
-    floatingGeometry.setAttribute('color', new THREE.Float32BufferAttribute(floatColors, 3)); floatingGeometry.computeVertexNormals();
-    const floating = new THREE.InstancedMesh(floatingGeometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, ...rockTextures() }), 12);
-    floating.name = 'floating-rock-formations';
-    for (let i = 0; i < 12; i++) {
-      const a = i * Math.PI / 6 + .38, radius = 184 + i % 3 * 21;
-      this.transform.position.set(Math.sin(a) * radius, 40 + i % 3 * 20, Math.cos(a) * radius);
-      this.transform.scale.set(10 + i % 3 * 3, 24 + i % 4 * 7, 13 + i % 2 * 5); this.transform.rotation.set(0, a, Math.PI);
-      this.transform.updateMatrix(); floating.setMatrixAt(i, this.transform.matrix);
-    }
-    floating.computeBoundingSphere(); this.group.add(floating); this.transform.rotation.set(0, 0, 0);
-
     // Gameplay hazard stays exactly at the existing authoritative surface.
     const lava = new THREE.Mesh(new THREE.PlaneGeometry(LAVA.width, LAVA.depth), new THREE.ShaderMaterial({
       uniforms: { time: this.clock }, side: THREE.DoubleSide, vertexShader: 'varying vec2 p; void main(){p=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
@@ -220,7 +205,7 @@ export class IslandBackdrop {
   }
 
   private addCoast() {
-    const coast = new THREE.Group(); coast.name = 'tropical-coast';
+    const coast = new THREE.Group(); coast.name = 'luminous-coast';
     const sand = new THREE.MeshStandardMaterial({ color: 0x526d81, roughness: .94 });
     const grass = new THREE.MeshStandardMaterial({ color: 0x368c82, roughness: .9 });
     const bark = new THREE.MeshStandardMaterial({ color: 0x4b4965, roughness: .95 });
@@ -251,7 +236,7 @@ export class IslandBackdrop {
   }
 
   update(seconds: number, _camera: THREE.Vector3, reduced: boolean) {
-    this.forest.update(reduced);
+    this.forest.update(reduced);this.skylands.update(reduced);
     this.clock.value = seconds; this.spray.visible = !reduced; this.motes.visible = !reduced;
     if (seconds < this.lastCloudUpdate || seconds - this.lastCloudUpdate >= (reduced ? .5 : .1)) {
       this.lastCloudUpdate = seconds;

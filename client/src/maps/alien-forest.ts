@@ -9,6 +9,7 @@ export class AlienForest {
   readonly group = new THREE.Group();
   private trunks: THREE.InstancedMesh;
   private crowns: THREE.InstancedMesh;
+  private lowCrowns: THREE.InstancedMesh;
   private roots: THREE.InstancedMesh;
   private blooms: THREE.InstancedMesh;
   private mist: THREE.Points;
@@ -20,7 +21,7 @@ export class AlienForest {
     const ground = new THREE.MeshStandardMaterial({ color: 0x375369, roughness: .94, ...rockTextures(), normalScale: new THREE.Vector2(.45, .45) });
     const islands = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), ground, FOREST_CLUSTERS);
     this.trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.55, 1, 1, 7, 2), bark, FOREST_TREES);
-    const canopy = new THREE.SphereGeometry(1, 10, 6), canopyPoints = canopy.getAttribute('position');
+    const canopy = new THREE.SphereGeometry(1, 14, 10), canopyPoints = canopy.getAttribute('position');
     for (let i = 0; i < canopyPoints.count; i++) {
       const x = canopyPoints.getX(i), y = canopyPoints.getY(i), z = canopyPoints.getZ(i), lobe = 1 + Math.sin(Math.atan2(x, z) * 5 + y * 3) * .17;
       canopyPoints.setXYZ(i, x * lobe, y + Math.sin(x * 4 + z * 2) * .09, z * lobe);
@@ -42,10 +43,10 @@ export class AlienForest {
       const index = j * FOREST_CLUSTERS + i, offset = j * 2.4 + i * .7;
       const x = cx + Math.sin(offset) * (j ? 6.5 : 0), z = cz + Math.cos(offset) * (j ? 6.5 : 0);
       const height = j === 0 && i % 4 === 0 ? 34 + i % 3 * 5 : 9 + (index % 6) * 1.8;
-      const width = height * .037;
+      const width = height * .052;
       place(this.trunks, index, x, height / 2, z, width, height, width, a, .04 * Math.sin(index));
-      place(this.crowns, index * 2, x, height, z, height * .22, height * .075, height * .2, a);
-      place(this.crowns, index * 2 + 1, x + width * 2, height * .83, z - width, height * .14, height * .07, height * .13, a + .7);
+      place(this.crowns, index * 2, x, height, z, height * .22, height * .12, height * .2, a);
+      place(this.crowns, index * 2 + 1, x + width * 2, height * .83, z - width, height * .14, height * .1, height * .13, a + .7);
       this.crowns.setColorAt(index * 2, new THREE.Color().setHSL(.43 + i % 4 * .018, .65, .28 + j % 3 * .035));
       this.crowns.setColorAt(index * 2 + 1, new THREE.Color(0x296978));
       for (let k = 0; k < 3; k++) {
@@ -61,6 +62,9 @@ export class AlienForest {
       }
     }
     for (const mesh of [islands, this.trunks, this.crowns, this.roots, this.blooms]) { mesh.computeBoundingSphere(); this.group.add(mesh); }
+    this.lowCrowns=new THREE.InstancedMesh(new THREE.SphereGeometry(1,10,6),leaf,FOREST_TREES*2);
+    this.lowCrowns.name='forest-canopies-low';this.lowCrowns.instanceMatrix=this.crowns.instanceMatrix;this.lowCrowns.instanceColor=this.crowns.instanceColor;
+    this.lowCrowns.computeBoundingSphere();this.lowCrowns.visible=false;this.group.add(this.lowCrowns);
     const spores = new THREE.BufferGeometry(); spores.setAttribute('position', new THREE.Float32BufferAttribute(points, 3)); spores.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     const fireflies = new THREE.Points(spores, new THREE.ShaderMaterial({
       uniforms: { time: clock, ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog) }, fog: true, transparent: true, depthWrite: false, vertexColors: true,
@@ -98,7 +102,7 @@ export class AlienForest {
   }
   update(reduced: boolean) {
     this.trunks.count = reduced ? FOREST_CLUSTERS * 2 : FOREST_TREES;
-    this.crowns.count = this.trunks.count * 2; this.roots.count = reduced ? 0 : FOREST_TREES * 3;
+    this.crowns.count = this.trunks.count * 2;this.crowns.visible=!reduced;this.lowCrowns.visible=reduced;this.lowCrowns.count=this.crowns.count; this.roots.count = reduced ? 0 : FOREST_TREES * 3;
     this.blooms.count = this.trunks.count; this.mist.visible = !reduced;
   }
 }

@@ -10,7 +10,7 @@ describe('weapon activation and validation', () => {
     const { world, a } = duel(); expect(activate(world, a)).toBe(false); equip(a, id);
     expect(activate(world, a)).toBe(true); expect(a.ammo).toBe(WEAPONS[id].ammo - 1);
     const count = world.projectiles.size; expect(activate(world, a)).toBe(false); expect(world.projectiles.size).toBe(count);
-    if (a.ammo > 0) { world.time = a.nextFire + 0.001; expect(activate(world, a)).toBe(true); }
+    if (a.ammo > 0) { if(id==='mine') a.z+=2; world.time = a.nextFire + 0.001; expect(activate(world, a)).toBe(true); }
     a.health = 0; expect(activate(world, a)).toBe(false);
   });
   it('cleans an equipped weapon after its final use', () => {

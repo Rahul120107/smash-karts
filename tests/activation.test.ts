@@ -39,7 +39,7 @@ describe('server-owned single-press attacks', () => {
     world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, fire: true }, { ...NEUTRAL, seq: 2, fire: false }]);
     const seen = new Map<number, number>();
     for (let i = 0; i < 240; i++) {
-      world.step(); for (const e of world.events) if (e.kind === 'fire' && e.player === a.id) seen.set(e.id, e.at);
+      if(id==='mine' && i%40===0) a.z+=2; world.step(); for (const e of world.events) if (e.kind === 'fire' && e.player === a.id) seen.set(e.id, e.at);
     }
     const uses = WEAPONS[id].activation === 'burst' ? WEAPONS[id].ammo : 1;
     expect(seen.size).toBe(uses); expect(a.ammo).toBe(WEAPONS[id].ammo - uses);

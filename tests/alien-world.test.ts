@@ -11,8 +11,13 @@ import { activate } from '../server/src/weapons/activate.js';
 import { stepProjectiles } from '../server/src/weapons/projectiles.js';
 import { explode } from '../server/src/combat/damage.js';
 import { duel, equip } from './helpers.js';
+import { skylandGeometry } from '../client/src/maps/skylands.js';
 
 describe('alien world geometry and quality budgets', () => {
+  it('faces floating island walls outward and closes the elevated moss and lower rock caps',()=>{
+    const geometry=skylandGeometry(),normal=geometry.getAttribute('normal');
+    expect(normal.getZ(0)).toBeGreaterThan(0);const positions=geometry.getAttribute('position');let caps=0;for(let i=0;i<positions.count;i++)if(Math.hypot(positions.getX(i),positions.getZ(i))<.001){expect(normal.getY(i)*Math.sign(positions.getY(i))).toBeGreaterThan(.9);caps++;}expect(caps).toBe(2);geometry.dispose();
+  });
   it('uses small original repeatable color and normal maps', () => {
     const textures = rockTextures();
     for (const map of Object.values(textures)) { expect(map.image.width).toBe(128); expect(map.image.height).toBe(128); expect(map.wrapS).toBe(THREE.RepeatWrapping); map.dispose(); }

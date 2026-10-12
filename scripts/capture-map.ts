@@ -6,8 +6,9 @@ import { ARENA_SIZE, CORNER_RADIUS, CROSSINGS, LAVA, PICKUP_POSITIONS, RAMPS, SP
 
 /** Review tooling only. Imports the actual map builders; no debug camera in the shipped UI. */
 const visualUpgrade = process.argv.includes('--visual-upgrade');
-const alienUpgrade = process.argv.includes('--alien-upgrade');
-const output = alienUpgrade ? 'docs/alien-review' : visualUpgrade ? 'docs/visual-review' : 'docs/map-review';
+const fantasyUpgrade = process.argv.includes('--fantasy-upgrade');
+const alienUpgrade = process.argv.includes('--alien-upgrade') || fantasyUpgrade;
+const output = fantasyUpgrade ? 'docs/fantasy-review' : alienUpgrade ? 'docs/alien-review' : visualUpgrade ? 'docs/visual-review' : 'docs/map-review';
 await mkdir(output, { recursive: true });
 const color=(value:number)=>'#'+value.toString(16).padStart(6,'0');
 const rampPlans=RAMPS.map(r=>{

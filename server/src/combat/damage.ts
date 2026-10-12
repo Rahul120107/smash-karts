@@ -1,32 +1,39 @@
 import { CONFIG } from '../../../shared/src/config.js';
 import { distance } from '../../../shared/src/math.js';
-import type { PlayerState, Projectile } from '../../../shared/src/types.js';
+import type { PlayerState, Projectile, WeaponId } from '../../../shared/src/types.js';
 import type { CombatWorld } from '../simulation/world.js';
 import { clearShot } from '../../../shared/src/aim.js';
+import { sanitizeName } from '../../../shared/src/elimination.js';
+import { WEAPONS } from '../../../shared/src/weapons.js';
 
-export function damage(world: CombatWorld, target: PlayerState, amount: number, attacker: string): void {
+export function damage(world: CombatWorld, target: PlayerState, amount: number, attacker: string, weapon?: WeaponId, attackerName?: string): void {
   // Owner attribution survives delayed fuses and splash; no weapon can hurt its originator.
-  if (target.id === attacker || target.health <= 0 || world.time < target.invulnerableUntil) return;
+  if (!Number.isFinite(amount) || amount <= 0 || target.id === attacker || target.health <= 0 || world.time < target.invulnerableUntil) return;
   if (world.time < target.shieldUntil) {
-    world.emit({ kind: 'shieldImpact', player: attacker, target: target.id, x: target.x, y: target.y + 0.7, z: target.z }); return;
+    world.emit({ kind: 'shieldImpact', player: attacker, target: target.id, weapon, x: target.x, y: target.y + 0.7, z: target.z }); return;
   }
-  target.health = Math.max(0, target.health - amount);
-  world.emit({ kind: 'hit', player: attacker, target: target.id, x: target.x, y: target.y + 0.7, z: target.z });
-  if (target.health > 0) return;
-  eliminate(world, target, attacker);
+  const remaining = Math.max(0, target.health - amount);
+  if (remaining > 0) target.health = remaining;
+  world.emit({ kind: 'hit', player: attacker, target: target.id, weapon, x: target.x, y: target.y + 0.7, z: target.z });
+  if (remaining > 0) return;
+  eliminate(world, target, attacker, weapon, attackerName);
 }
 
 /** Environmental deaths share respawn bookkeeping, without an invented weapon owner. */
-export function eliminate(world: CombatWorld, target: PlayerState, attacker: string) {
+export function eliminate(world: CombatWorld, target: PlayerState, attacker: string, weapon?: WeaponId, attackerName?: string) {
+  if (target.health <= 0) return;
   target.health = 0;
   target.deaths++;
   target.respawnAt = world.time + CONFIG.respawnDelay;
   target.weapon = null; target.ammo = 0; target.shieldUntil = 0; target.boostUntil = 0; target.orbitUntil = 0;
-  target.attacking = false; target.aimTarget = null;
+  target.attacking = false; target.charging = false; target.aimTarget = null;
   target.vx = 0; target.vz = 0; target.vy = 0;
   const killer = world.players.get(attacker);
   if (killer && killer.id !== target.id) killer.score++;
-  world.emit({ kind: 'elimination', player: attacker, target: target.id, x: target.x, y: target.y + 0.6, z: target.z });
+  world.emit({ kind: 'elimination', player: attacker, target: target.id, weapon,
+    killerId:attacker, killerName:sanitizeName(attackerName ?? killer?.name ?? (attacker==='environment'?'Lava':'Departed player')),
+    victimId:target.id, victimName:sanitizeName(target.name), weaponName:weapon==='cannon'?'Cannonball':weapon==='rocket'?'Rocket':weapon?WEAPONS[weapon].label:attacker==='environment'?'Lava':'Unknown weapon',
+    x: target.x, y: target.y + 0.6, z: target.z });
 }
 
 export function explode(world: CombatWorld, projectile: Projectile): void {
@@ -39,6 +46,6 @@ export function explode(world: CombatWorld, projectile: Projectile): void {
     // of a platform would incorrectly let splash escape through solid terrain.
     if (!clearShot({ x: projectile.x, y: projectile.y + .001, z: projectile.z }, center, 0)) continue;
     const amount = Math.round(projectile.damage * (1 - 0.7 * d / projectile.blast));
-    damage(world, target, amount, projectile.owner);
+    damage(world, target, amount, projectile.owner, projectile.weapon, projectile.ownerName);
   }
 }

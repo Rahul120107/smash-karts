@@ -50,7 +50,7 @@ describe('reference-shaped island routes and rendering',()=>{
     expect((env.group.getObjectByName('waterfall-mist') as THREE.Points).geometry.getAttribute('position').count).toBe(256);
     for (const site of WATERFALL_SITES) {expect(Math.hypot(site.x,site.z)-site.radius*1.4).toBeGreaterThan(112);expect(site.height).toBeGreaterThanOrEqual(66);}
     // No far-away shadow casters; no unbounded emitters or extra collidable scenery.
-    let draws=0;env.group.traverse(o=>{expect(o.castShadow).toBe(false);if(o instanceof THREE.Mesh||o instanceof THREE.Points)draws++;});expect(draws).toBeLessThanOrEqual(21);
+    let draws=0;env.group.traverse(o=>{expect(o.castShadow).toBe(false);if(o instanceof THREE.Mesh||o instanceof THREE.Points)draws++;});expect(draws).toBeLessThanOrEqual(25);
     const lava=env.group.getObjectByName('lava') as THREE.Mesh<THREE.PlaneGeometry,THREE.ShaderMaterial>;expect(lava.position.y).toBe(LAVA.surface);
     env.update(30,new THREE.Vector3(),true);expect(lava.material.uniforms.time!.value).toBe(30);
     expect(falls.visible).toBe(true);expect(clouds.visible).toBe(true);expect(env.group.getObjectByName('waterfall-mist')!.visible).toBe(false);

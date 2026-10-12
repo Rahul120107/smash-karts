@@ -65,17 +65,15 @@ describe('real WebSocket multiplayer integration', () => {
     b.send({ type: 'contact', target: idA, orbitUntil: 999 });
     await b.wait(m => m.type === 'error' && m.message.includes('Unsupported')); expect(shooter.health).toBe(100);
   });
-  it('does not spend rocket inventory automatically or repeat a held key over WebSockets', async () => {
-    const { a, b, idA, idB, code } = await setup(12); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');
-    const world = server!.rooms.rooms.get(code)!.simulation, shooter = world.players.get(idA)!, target = world.players.get(idB)!;
-    Object.assign(shooter, { x: -12, z: 0, yaw: 0, invulnerableUntil: 0 }); Object.assign(target, { x: 30, z: 45 }); equip(shooter, 'rocket');
-    const since = world.time;
-    a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 1, fire: true }] });
-    const states = await Promise.all([a.state(s => s.time > since + 1), b.state(s => s.time > since + 1)]);
-    for (const state of states) expect(state.players.find(p => p.id === idA)).toMatchObject({ weapon: 'rocket', ammo: 2, attacking: false });
-    a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 2, fire: true }] }); await b.state(s => s.players.find(p => p.id === idA)?.ack === 2); expect(shooter.ammo).toBe(2);
-    a.send({ type: 'input', commands: [{ ...NEUTRAL, seq: 3 }, { ...NEUTRAL, seq: 4, fire: true }] });
-    await b.state(s => s.players.find(p => p.id === idA)?.ammo === 1); expect(shooter.health).toBe(100);
+  it('synchronizes all three rockets after one press, ignoring held keys and duplicate presses', async()=>{
+    const {a,b,idA,idB,code}=await setup(12);a.send({type:'start'});await b.state(s=>s.phase==='playing');
+    const world=server!.rooms.rooms.get(code)!.simulation,shooter=world.players.get(idA)!,target=world.players.get(idB)!;
+    Object.assign(shooter,{x:-12,z:0,yaw:0,invulnerableUntil:0});Object.assign(target,{x:30,z:45});equip(shooter,'rocket');const since=world.time;
+    a.send({type:'input',commands:[{...NEUTRAL,seq:1,fire:true,firePress:1}]});
+    const states=await Promise.all([a.state(s=>s.time>since+1.5),b.state(s=>s.time>since+1.5)]);
+    for(const state of states)expect(state.players.find(p=>p.id===idA)).toMatchObject({weapon:null,ammo:0,attacking:false});
+    for(const peer of [a,b])expect(new Set(peer.messages.flatMap(m=>m.type==='snapshot'?m.state.events.filter(e=>e.kind==='fire'&&e.weapon==='rocket').map(e=>e.id):[])).size).toBe(3);
+    equip(shooter,'boost');a.send({type:'input',commands:[{...NEUTRAL,seq:2,fire:true,firePress:1}]});await b.state(s=>s.players.find(p=>p.id===idA)?.ack===2);expect(shooter.boostUntil).toBe(0);
   });
   it('synchronizes a full assisted machine-gun attack after one press and immediate release', async () => {
     const { a, b, idA, idB, code } = await setup(12); a.send({ type: 'start' }); await b.state(s => s.phase === 'playing');

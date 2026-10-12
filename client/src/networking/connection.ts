@@ -69,7 +69,8 @@ export class Connection {
         const retained = previous?.code === message.state.code && previous.tick <= message.state.tick ? previous.events.filter(e => e.at <= message.state.time && message.state.time - e.at < 0.75) : [];
         const ids = new Set(retained.map(e => e.id));
         const snapshot = { ...message.state, events: [...retained, ...message.state.events.filter(e => !ids.has(e.id))].slice(-256) };
-        this.update({ snapshot, feed: [...this.state.feed, ...fresh.filter(e => e.kind === 'elimination')].slice(-4) });
+        const replay = previous && (message.state.tick < previous.tick || previous.phase !== 'playing' && message.state.phase === 'playing');
+        this.update({ snapshot, feed: [...(replay ? [] : this.state.feed), ...fresh.filter(e => e.kind === 'elimination')].slice(-32) });
         for (const callback of this.snapshotListeners) callback(snapshot);
       } else if (message.type === 'error') {
         if (!this.state.id) this.room = null;

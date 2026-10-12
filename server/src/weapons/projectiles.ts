@@ -27,19 +27,29 @@ function steerHoming(world: CombatWorld, p: Projectile): void {
   const dx = target.x + target.vx * lead - p.x, dy = target.y + .65 + target.vy * lead - p.y, dz = target.z + target.vz * lead - p.z;
   const length = Math.hypot(dx, dy, dz), speed = Math.hypot(p.vx, p.vy, p.vz);
   if (length < 0.01) return;
-  // Tighten the approach near the target so finite turning doesn't create a permanent orbit.
-  const turnRate = WEAPONS.homing.turnRate * (1 + 3 / Math.max(1, length));
-  const mix = 1 - Math.exp(-turnRate * DT);
-  p.vx = lerp(p.vx, dx / length * speed, mix); p.vy = lerp(p.vy, dy / length * speed, mix); p.vz = lerp(p.vz, dz / length * speed, mix);
-  const norm = Math.hypot(p.vx, p.vy, p.vz) || 1;
-  p.vx *= speed / norm; p.vy *= speed / norm; p.vz *= speed / norm;
+  if (speed < 1e-8) return;
+  const from = { x:p.vx/speed,y:p.vy/speed,z:p.vz/speed }, to={x:dx/length,y:dy/length,z:dz/length};
+  const dot=clamp(from.x*to.x+from.y*to.y+from.z*to.z,-1,1), angle=Math.acos(dot);
+  if(angle<1e-8)return;
+  const turn=Math.min(angle,WEAPONS.homing.turnRate*DT);
+  let tx=to.x-from.x*dot,ty=to.y-from.y*dot,tz=to.z-from.z*dot;
+  let tangent=Math.hypot(tx,ty,tz);
+  if(tangent<1e-8){
+    // An antiparallel target has no unique tangent; choose an orthogonal axis,
+    // including steep airborne launches, so turning preserves projectile speed.
+    if(Math.abs(from.y)<.9){tx=from.z;ty=0;tz=-from.x;}
+    else {tx=0;ty=-from.z;tz=from.y;}
+    tangent=Math.hypot(tx,ty,tz);
+  }
+  p.vx=(from.x*Math.cos(turn)+tx/tangent*Math.sin(turn))*speed;
+  p.vy=(from.y*Math.cos(turn)+ty/tangent*Math.sin(turn))*speed;
+  p.vz=(from.z*Math.cos(turn)+tz/tangent*Math.sin(turn))*speed;
 }
 function stepBomb(world: CombatWorld, p: Projectile): void {
-  p.vy -= CONFIG.gravity * DT;
   let remaining = DT;
   for (let bounce = 0; bounce < 3 && remaining > 1e-8; bounce++) {
     const old = { x: p.x, y: p.y, z: p.z };
-    const next = { x: p.x + p.vx * remaining, y: p.y + p.vy * remaining, z: p.z + p.vz * remaining };
+    const next = ballisticPosition(p, remaining, CONFIG.gravity);
     let contact = wallContact(old, next, p.radius);
     const terrain = terrainHit(old, next, p.radius);
     if (terrain !== null && (!contact || terrain < contact.time)) {
@@ -55,8 +65,9 @@ function stepBomb(world: CombatWorld, p: Projectile): void {
       const length = Math.hypot(dx, dy, dz) || 1, normal = { x: dx / length, y: dy / length, z: dz / length };
       if (p.vx * normal.x + p.vy * normal.y + p.vz * normal.z < 0) contact = { time, normal };
     }
-    if (!contact) { Object.assign(p, next); break; }
+    if (!contact) { Object.assign(p, next); p.vy -= CONFIG.gravity * remaining; break; }
     hitPosition(p, old, next, contact.time);
+    p.vy -= CONFIG.gravity * remaining * contact.time;
     const n = contact.normal;
     p.x += n.x * 0.0001; p.y += n.y * 0.0001; p.z += n.z * 0.0001;
     const inward = p.vx * n.x + p.vy * n.y + p.vz * n.z;
@@ -75,6 +86,7 @@ function hitPosition(p: Projectile, old: Vec3, next: Vec3, t: number): void {
 export function stepProjectiles(world: CombatWorld): void {
   for (const p of world.projectiles.values()) {
     if (world.time >= p.expires) {
+      if(p.blockedAtSpawn)world.emit({kind:'impact',player:p.owner,weapon:p.weapon,x:p.x,y:p.y,z:p.z});
       if (p.blast > 0 && p.kind !== 'mine') explode(world, p);
       world.projectiles.delete(p.id); continue;
     }
@@ -109,7 +121,7 @@ export function stepProjectiles(world: CombatWorld): void {
       hitPosition(p, old, next, clamp(hit - .00001, 0, 1));
       if (p.blast > 0) explode(world, p);
       else {
-        if (victim) damage(world, world.players.get(victim)!, p.damage, p.owner);
+        if (victim) damage(world, world.players.get(victim)!, p.damage, p.owner, p.weapon, p.ownerName);
         world.emit({ kind: 'impact', player: p.owner, weapon: p.weapon, x: p.x, y: p.y, z: p.z });
       }
       world.projectiles.delete(p.id);

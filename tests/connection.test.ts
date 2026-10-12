@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Connection } from '../client/src/networking/connection.js';
 import { Simulation } from '../server/src/simulation/simulation.js';
+import { damage } from '../server/src/combat/damage.js';
 
 class Socket {
   static OPEN = 1; static CONNECTING = 0; static sockets: Socket[] = [];
@@ -20,6 +21,12 @@ const socket = () => Socket.sockets.at(-1)!;
 function enter() { socket().open(); connection.create('Tester'); socket().message({ type: 'welcome', id: 'one', code: 'AAAAA' }); }
 
 describe('connection recovery', () => {
+  it('deduplicates authoritative elimination events and clears notices on replay',()=>{
+    enter();const world=new Simulation(),a=world.addPlayer('one','Tester'),b=world.addPlayer('two','Opponent');world.start();a.invulnerableUntil=b.invulnerableUntil=0;
+    damage(world,b,100,a.id,'cannon');const state=world.snapshot('AAAAA',a.id,8);
+    socket().message({type:'snapshot',state});socket().message({type:'snapshot',state});expect(connection.state.feed).toHaveLength(1);expect(connection.state.feed[0]).toMatchObject({weaponName:'Cannonball',victimName:'Opponent'});
+    world.tick=30;world.time=.5;socket().message({type:'snapshot',state:world.snapshot('AAAAA',a.id,8)});world.start();socket().message({type:'snapshot',state:world.snapshot('AAAAA',a.id,8)});expect(connection.state.feed).toHaveLength(0);
+  });
   it('avoids duplicate connections and duplicate pending room requests', () => {
     connection.connect(); expect(Socket.sockets).toHaveLength(1); socket().open(); connection.create('Tester'); connection.create('Again');
     expect(socket().sent.filter(m => m.type === 'create')).toHaveLength(1);

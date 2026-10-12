@@ -1,0 +1,22 @@
+{
+  "requested": "hardware",
+  "os": "win32",
+  "cpu": "13th Gen Intel(R) Core(TM) i5-1334U",
+  "memoryGiB": 15.7,
+  "viewport": "1920x1080",
+  "players": 8,
+  "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x0000A7A1) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "frames": {
+    "fps": 48.649187519154566,
+    "meanFrameMs": 20.555327868657038,
+    "p95FrameMs": 33.399999999999636,
+    "maxFrameMs": 50.100000000000364
+  },
+  "render": {
+    "drawCalls": 98,
+    "triangles": 186928,
+    "pixelQualityReduced": false
+  },
+  "status": "measured",
+  "errors": []
+}

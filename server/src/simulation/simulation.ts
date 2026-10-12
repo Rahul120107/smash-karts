@@ -15,6 +15,7 @@ import { stepLavaHazard } from './hazards.js';
 interface Controls { queue: Input[]; last: Input; lastReceived: number; highest: number; fireDown: boolean; pressed: boolean; firePress: number }
 export class Simulation implements CombatWorld {
   time = 0; tick = 0; phase: Snapshot['phase'] = 'lobby';
+  matchId = 0;
   players = new Map<string, PlayerState>(); projectiles = new Map<number, Projectile>();
   pickups: Pickup[] = []; events: GameEvent[] = [];
   readonly attacks = new AttackSequences();
@@ -23,7 +24,7 @@ export class Simulation implements CombatWorld {
   private projectileId = 0; private eventId = 0; private controls = new Map<string, Controls>();
   constructor(public duration: number = CONFIG.matchDuration, public random: () => number = Math.random) { this.resetPickups(); }
   nextProjectileId() { return ++this.projectileId; }
-  emit(event: Omit<GameEvent, 'id' | 'at'>) { this.events.push({ ...event, id: ++this.eventId, at: this.time }); }
+  emit(event: Omit<GameEvent, 'id' | 'at'>) { const id=++this.eventId; this.events.push({ ...event, id, at: this.time, matchId:this.matchId, matchEventId:`${this.matchId}:${id}` }); }
   private resetPickups() { this.pickups = PICKUP_POSITIONS.map((p, id) => ({ ...p, id, active: true, availableAt: 0 })); }
   addPlayer(id: string, name: string): PlayerState {
     const usedColors = new Set([...this.players.values()].map(player => player.color));
@@ -48,6 +49,7 @@ export class Simulation implements CombatWorld {
     const c = this.controls.get(p.id)!; c.queue = []; c.last = { ...NEUTRAL }; c.lastReceived = -1;
   }
   start() {
+    this.matchId++;
     this.phase = 'playing'; this.time = 0; this.tick = 0; this.projectiles.clear(); this.attacks.clear(); this.events = []; this.winnerIds = []; this.resetPickups();
     let index = 0;
     for (const p of this.players.values()) {
@@ -97,6 +99,8 @@ export class Simulation implements CombatWorld {
       p.aimTarget = p.weapon && WEAPONS[p.weapon].aimAssist ? weaponAim(p, alive, this.time, p.weapon).target?.id ?? null : null;
       const c = this.controls.get(p.id)!;
       if (this.time - c.lastReceived <= CONFIG.inputTimeout && c.pressed) this.attacks.begin(this, p);
+      if (this.time - c.lastReceived > CONFIG.chargeInputTimeout && p.charging) this.attacks.cancel(p);
+      else if (!(c.last.fireHeld ?? c.last.fire)) this.attacks.release(this, p);
       this.attacks.step(this, p);
     }
     stepContactAttacks(this); stepProjectiles(this); collectPickups(this);

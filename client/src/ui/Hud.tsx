@@ -6,6 +6,9 @@ import { drivingTelemetry } from '../../../shared/src/movement.js';
 import { ARENA_SIZE } from '../../../shared/src/arena.js';
 import type { GameEvent, Snapshot } from '../../../shared/src/types.js';
 import { WeaponIcon } from './WeaponIcon.js';
+import { TouchControls } from './TouchControls.js';
+import { QualityButton } from './QualityButton.js';
+import { eliminationNotice, NOTIFICATIONS, sanitizeName } from '../../../shared/src/elimination.js';
 import { MAP_LABEL, MODE_LABEL, standings } from '../../../shared/src/match.js';
 export function clock(seconds: number) { const n = Math.max(0, Math.ceil(seconds)); return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0'); }
 export function ranked(state: Snapshot) { return standings(state.players); }
@@ -24,14 +27,17 @@ export function Hud({ state, id, rtt, feed, muted, onMute, onLeave }: { state: S
   const telemetry = drivingTelemetry(self), target = state.players.find(p => p.id === self.aimTarget && p.health > 0);
   const assisted = !!weapon?.aimAssist && !!target && self.health > 0;
   const hurt = state.events.some(e => e.kind === 'hit' && e.target === id && state.time - e.at < 0.25);
+  const notices = feed.filter(e => state.time >= e.at && state.time - e.at < NOTIFICATIONS.duration).map(event => ({event,notice:eliminationNotice(event,id)})).filter(item=>item.notice).slice(-2);
   return <div className={'hud ' + (hurt ? 'hurt' : '')}>
+    {self.health > 0 && <TouchControls/>}
+    <div className="elimination-notices" aria-live="polite">{notices.map(({event,notice})=><div key={event.matchEventId??event.id} className={'elimination-notice '+(notice!.death?'death':'smash')} data-testid={notice!.death?'death-notification':'kill-notification'}><span>{notice!.death?'KART SMASHED':'SMASH CONFIRMED'}</span><strong>{notice!.message}</strong>{event.weapon && <WeaponIcon weapon={event.weapon}/>}</div>)}</div>
     <div className="hud-top">
       <div className="match-title"><span className="eyebrow">{MODE_LABEL.toUpperCase()}</span><strong>{MAP_LABEL} <span className="room-tag">{state.code}</span></strong></div>
       <div className={'timer ' + (state.remaining < 30 ? 'urgent' : '') + (state.remaining <= 10 ? ' final-seconds' : '')}><span>TIME LEFT</span><strong data-testid="match-timer">{clock(state.remaining)}</strong><div className="timer-track"><i style={{ width: state.remaining / state.duration * 100 + '%' }}/></div></div>
-      <div className="hud-actions"><span className={'latency ' + (rtt > 180 ? 'slow' : '')}>{rtt} ms</span><button onClick={event => { event.currentTarget.blur(); onMute(); }} aria-label={muted ? 'Unmute audio' : 'Mute audio'}>{muted ? 'Sound off' : 'Sound on'}</button><button onClick={onLeave}>Leave</button></div>
+      <div className="hud-actions"><span className={'latency ' + (rtt > 180 ? 'slow' : '')}>{rtt} ms</span><button onClick={event => { event.currentTarget.blur(); onMute(); }} aria-label={muted ? 'Unmute audio' : 'Mute audio'}>{muted ? 'Sound off' : 'Sound on'}</button><QualityButton/><button onClick={onLeave}>Leave</button></div>
     </div>
     <aside className="leaderboard"><span className="eyebrow">LIVE STANDINGS <small>ELIMS</small></span>{scores.map((p, index) => <div className={p.id === id ? 'you' : ''} key={p.id}><span className="rank">{String(index + 1).padStart(2, '0')}</span><i style={{ background: '#' + p.color.toString(16).padStart(6, '0') }}/><span className="player-name">{p.name}{p.id === id ? ' · you' : ''}</span><b>{p.score}</b></div>)}</aside>
-    <div className="kill-feed" aria-live="polite">{feed.filter(e => state.time - e.at < 4 && state.time >= e.at).map(e => <div key={e.id}><b>{state.players.find(p => p.id === e.player)?.name ?? (e.player === 'environment' ? 'Lava' : 'Player')}</b><span>✦</span>{state.players.find(p => p.id === e.target)?.name ?? 'Player'}</div>)}</div>
+    <div className="kill-feed" aria-live="polite">{feed.filter(e => state.time - e.at < NOTIFICATIONS.feedDuration && state.time >= e.at).slice(-4).map(e => <div key={e.matchEventId??e.id}><b>{sanitizeName(e.killerName ?? state.players.find(p => p.id === e.player)?.name ?? (e.player === 'environment' ? 'Lava' : 'Player'))}</b><span>{e.weaponName??'✦'}</span>{sanitizeName(e.victimName ?? state.players.find(p => p.id === e.target)?.name ?? 'Player')}</div>)}</div>
     <div className={'aim-indicator ' + (assisted ? 'locked' : '')} aria-hidden="true"><i/><i/><i/><i/></div>
     {weapon?.aimAssist && self.health > 0 && <div className={'aim-feedback ' + (assisted ? 'locked' : '')} data-testid="aim-feedback">{assisted ? 'TRACKING ' + target!.name : 'ASSIST READY'}</div>}
     {state.time < 1.5 && <div className="battle-live"><span>{MAP_LABEL.toUpperCase()}</span><strong>BATTLE LIVE</strong><small>Collect. Aim. Fire.</small></div>}
@@ -44,7 +50,7 @@ export function Hud({ state, id, rtt, feed, muted, onMute, onLeave }: { state: S
         <div className={'speed-readout ' + (telemetry.sliding ? 'sliding' : '')}><b>{Math.round(telemetry.speed * 3.6)}</b><span>KM/H</span>{telemetry.sliding && <strong>DRIFT</strong>}<div><i style={{ width: Math.min(100, telemetry.speed / (CONFIG.maxSpeed * CONFIG.boostMultiplier) * 100) + '%' }}/></div></div>
       </div>
       <div className={'weapon-panel ' + (weapon ? 'equipped' : '')} style={weapon ? { '--weapon-color': '#' + weapon.color.toString(16).padStart(6, '0') } as CSSProperties : undefined}>
-        <div className="weapon-icon"><WeaponIcon weapon={self.weapon}/></div><div><span className="eyebrow">{self.attacking ? 'ATTACK IN PROGRESS' : weapon ? state.time < self.nextFire ? 'RELOADING' : 'TAP SPACE TO ACTIVATE' : 'LOOK FOR THE GOLD BOXES'}</span><strong data-testid="equipped-weapon">{weapon?.label ?? 'Find a weapon'}</strong><span>{weapon?.hint ?? 'Drive through a box to collect'}</span></div>{weapon && <div className="ammo" data-testid="ammo">{self.ammo}<small>{weapon.duration > 0 ? 'USES' : 'AMMO'}</small></div>}
+        <div className="weapon-icon"><WeaponIcon weapon={self.weapon}/></div><div><span className="eyebrow">{self.charging ? 'RELEASE TO THROW' : self.attacking ? 'ATTACK IN PROGRESS' : weapon ? state.time < self.nextFire ? 'RELOADING' : 'TAP SPACE TO ACTIVATE' : 'LOOK FOR THE GOLD BOXES'}</span><strong data-testid="equipped-weapon">{weapon?.label ?? 'Find a weapon'}</strong><span>{weapon?.hint ?? 'Drive through a box to collect'}</span></div>{weapon && <div className="ammo" data-testid="ammo">{self.ammo}<small>{weapon.duration > 0 ? 'USES' : 'AMMO'}</small></div>}
       </div>
       <MiniMap state={state} id={id}/>
     </div>

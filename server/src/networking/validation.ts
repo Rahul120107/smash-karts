@@ -1,8 +1,9 @@
 import type { ClientMessage, Input } from '../../../shared/src/types.js';
+import { sanitizeName } from '../../../shared/src/elimination.js';
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 function name(v: unknown): string {
   if (typeof v !== 'string') throw new Error('Enter a nickname.');
-  const clean = v.trim().replace(/[\u0000-\u001f\u007f]/g, '');
+  const clean = sanitizeName(v);
   if (!clean || clean.length > 18) throw new Error('Nickname must be 1–18 characters.');
   return clean;
 }
@@ -26,8 +27,9 @@ export function parseMessage(raw: string): ClientMessage {
           typeof c.throttle !== 'number' || !Number.isFinite(c.throttle) || Math.abs(c.throttle) > 1 ||
           typeof c.steer !== 'number' || !Number.isFinite(c.steer) || Math.abs(c.steer) > 1 || typeof c.fire !== 'boolean' || typeof c.drift !== 'boolean') throw new Error('Invalid player controls.');
         if (c.firePress !== undefined && (!Number.isSafeInteger(c.firePress) || (c.firePress as number) < 0 || (c.firePress as number) > 1e9)) throw new Error('Invalid fire press.');
+        if (c.fireHeld !== undefined && typeof c.fireHeld !== 'boolean') throw new Error('Invalid held fire.');
         commands.push({ seq: c.seq as number, throttle: c.throttle, steer: c.steer, fire: c.fire, drift: c.drift,
-          ...(c.firePress === undefined ? {} : { firePress: c.firePress as number }) });
+          ...(c.firePress === undefined ? {} : { firePress: c.firePress as number }), ...(c.fireHeld === undefined ? {} : { fireHeld: c.fireHeld }) });
       }
       return { type: 'input', commands };
     }

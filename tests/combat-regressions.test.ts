@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Controls } from '../client/src/game/input.js';
+import { Controls, touchControl } from '../client/src/game/input.js';
 import { CONFIG, DT } from '../shared/src/config.js';
 import { NEUTRAL } from '../shared/src/movement.js';
 import { WEAPONS } from '../shared/src/weapons.js';
@@ -24,6 +24,13 @@ function keyboard(active = () => true) {
   return { controls, key, windowTarget, documentTarget };
 }
 describe('central input and lossless Space intent', () => {
+  it('combines independent touch and keyboard sources without repeating a held fire sequence',()=>{
+    const {controls,key,windowTarget}=keyboard();key('keydown','KeyW');touchControl('left',true,1);touchControl('fire',true,2);
+    expect(controls.read(1)).toMatchObject({throttle:1,steer:1,fireHeld:true,firePress:1});
+    key('keydown','Space');touchControl('fire',false,2);expect(controls.read(2)).toMatchObject({fireHeld:true,firePress:1});
+    key('keyup','Space');touchControl('left',false,1);expect(controls.read(3)).toMatchObject({throttle:1,steer:0,fireHeld:false});
+    touchControl('fire',true,3);windowTarget.dispatchEvent(new Event('blur'));expect(controls.read(4).fire).toBe(false);controls.dispose();
+  });
   it.each([['KeyW', 'KeyA', 'ShiftLeft'], ['ArrowUp', 'ArrowLeft', 'ShiftRight']])('fires during simultaneous throttle, steering and drift: %s', (forward, left, shift) => {
     const { controls, key } = keyboard();
     for (const code of [forward, left, shift, 'Space']) expect(key('keydown', code).defaultPrevented).toBe(true);
@@ -54,24 +61,23 @@ describe('central input and lossless Space intent', () => {
     }
     controls.clear(); expect(controls.read(2).firePress).toBe(0); controls.dispose();
   });
-  it('server recognizes a new tap even when adjacent commands both say fire=true', () => {
-    const { world, a } = duel(); equip(a, 'bullets');
-    world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, fire: true, firePress: 1 }]); world.step(); expect(a.ammo).toBe(2);
-    advance(world, .31);
-    world.enqueue(a.id, [{ ...NEUTRAL, seq: 2, fire: true, firePress: 2 }]); world.step(); expect(a.ammo).toBe(1);
-    world.enqueue(a.id, [{ ...NEUTRAL, seq: 3, fire: true, firePress: 2 }]); advance(world, .4); expect(a.ammo).toBe(1);
+  it('recognizes consecutive taps with no sampled release, but does not replay an old press', () => {
+    const {world,a}=duel();equip(a,'shield');
+    world.enqueue(a.id,[{...NEUTRAL,seq:1,fire:true,firePress:1}]);world.step();expect(a.weapon).toBeNull();
+    equip(a,'boost');world.enqueue(a.id,[{...NEUTRAL,seq:2,fire:true,firePress:2}]);world.step();expect(a.boostUntil).toBeGreaterThan(world.time);
+    equip(a,'shield');a.shieldUntil=0;world.enqueue(a.id,[{...NEUTRAL,seq:3,fire:true,firePress:2}]);world.step();expect(a.shieldUntil).toBe(0);
   });
   it('preserves fire intent when the movement backlog is trimmed', () => {
     const { world, a } = duel(); equip(a, 'rocket');
     world.enqueue(a.id, Array.from({ length: CONFIG.maxQueue + 8 }, (_, i) => ({ ...NEUTRAL, seq: i + 1, fire: i === 0, firePress: 1 })));
-    world.step(); expect(a.ammo).toBe(2); advance(world, 1); expect(a.ammo).toBe(2);
+    world.step(); expect(a.ammo).toBe(2); advance(world, 1); expect(a.ammo).toBe(1); advance(world,.5);expect(a.ammo).toBe(0);
   });
-  it('buffers only a near-ready shot and cannot replay an old press ID', () => {
-    const { world, a } = duel(); equip(a, 'rocket');
-    world.enqueue(a.id, [{ ...NEUTRAL, seq: 1, firePress: 1 }]); world.step(); advance(world, .55);
-    world.enqueue(a.id, [{ ...NEUTRAL, seq: 2, firePress: 2 }]); world.step(); expect(a.ammo).toBe(2);
-    advance(world, .12); expect(a.ammo).toBe(1);
-    world.enqueue(a.id, [{ ...NEUTRAL, seq: 3, firePress: 1 }]); advance(world, 1); expect(a.ammo).toBe(1);
+  it('buffers only near-ready activation and cannot replay an old press ID',()=>{
+    const {world,a}=duel();equip(a,'shield');a.nextFire=.08;
+    world.enqueue(a.id,[{...NEUTRAL,seq:1,firePress:1}]);world.step();expect(a.ammo).toBe(1);
+    advance(world,.12);expect(a.ammo).toBe(0);expect(a.shieldUntil).toBeGreaterThan(world.time);
+    equip(a,'boost');world.enqueue(a.id,[{...NEUTRAL,seq:2,firePress:1}]);advance(world,.2);expect(a.boostUntil).toBe(0);
+    a.nextFire=world.time+.3;world.enqueue(a.id,[{...NEUTRAL,seq:3,firePress:2}]);advance(world,.5);expect(a.boostUntil).toBe(0);
   });
   it('does not activate a newly acquired weapon from a held Space or dead-player intent', () => {
     const { world, a, b } = duel(); equip(a, 'shield');

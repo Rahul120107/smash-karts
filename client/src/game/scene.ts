@@ -18,17 +18,19 @@ import { IslandBackdrop } from '../maps/island-backdrop.js';
 import { animateSuspension } from '../vehicles/animation.js';
 import { PickupBatch } from '../weapons/pickup-batch.js';
 import { addIslandLighting } from './presentation.js';
-import { ballisticPosition } from '../../../shared/src/weapon-physics.js';
-import { weaponAim } from '../../../shared/src/aim.js';
+import { ballisticPosition, presentedMuzzle } from '../../../shared/src/weapon-physics.js';
+import { clearShot, weaponAim } from '../../../shared/src/aim.js';
 import { WEAPONS } from '../../../shared/src/weapons.js';
+import { ThrowPreview } from '../weapons/throw-preview.js';
+import { graphicsMode, onGraphicsMode } from './quality.js';
 
 function disposeObject(object: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
   object.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.Sprite || child instanceof THREE.LineSegments || child instanceof THREE.Points) {
+    if (child instanceof THREE.Mesh || child instanceof THREE.Sprite || child instanceof THREE.Line || child instanceof THREE.Points) {
       if ('geometry' in child) geometries.add(child.geometry);
       for (const m of Array.isArray(child.material) ? child.material : [child.material]) {
-        materials.add(m); for (const value of Object.values(m)) if (value instanceof THREE.Texture) textures.add(value);
+        materials.add(m); if(m instanceof THREE.ShaderMaterial)for(const uniform of Object.values(m.uniforms))if(uniform.value instanceof THREE.Texture)textures.add(uniform.value); for (const value of Object.values(m)) if (value instanceof THREE.Texture) textures.add(value);
       }
       if(child instanceof THREE.InstancedMesh)child.dispose();
     }
@@ -43,6 +45,7 @@ export class ArenaGame {
   private controls = new Controls(() => connection.state.snapshot?.phase === 'playing' && connection.state.status === 'connected' && !document.hidden); private prediction = new Prediction(); private interpolation = new Interpolation();
   private karts = new Map<string, KartVisual>(); private pickups = new Map<number, THREE.Group>();
   private projectiles = new Map<number, THREE.Group>(); private projectileTemplates = new Map<string, THREE.Group>();
+  private projectileBatches = new Map<string, { batch: PickupBatch; visuals: THREE.Group[] }>();
   private pickupTemplate = createPickup(); private particles: Particles; readonly audio = new GameAudio();
   private pickupBatch = new PickupBatch(this.scene,this.pickupTemplate,PICKUP_POSITIONS.length);
   private unsubscribe: () => void; private resize: ResizeObserver; private previous = performance.now();
@@ -51,6 +54,10 @@ export class ArenaGame {
   private renderYaw = 0; private cameraReady = false; private lastFrame = 0;
   private lastShadow = 0; private frames = 0; private statsAt = 0; private frameAverage = 16; private slowSamples = 0;
   private visualTarget = new THREE.Vector3();
+  private throwPreview = new ThrowPreview();
+  private software = false;
+  private automaticReduced = false;
+  private unsubscribeQuality = onGraphicsMode(()=>this.applyQuality());
   private idleDirty = true; private renderMode = ''; private idleRenders = 0;
   private aim = new THREE.Vector3(); private cameraTarget = new THREE.Vector3();
   constructor(private container: HTMLDivElement) {
@@ -60,9 +67,11 @@ export class ArenaGame {
     const gl=this.renderer.getContext(),gpu=gl.getExtension('WEBGL_debug_renderer_info');
     this.container.dataset.gpu=gpu ? String(gl.getParameter(gpu.UNMASKED_RENDERER_WEBGL)) : 'Renderer unavailable';
     const software=/SwiftShader|llvmpipe|Software Rasterizer/i.test(this.container.dataset.gpu);
-    if(software){this.renderer.setPixelRatio(.85);this.renderer.shadowMap.enabled=false;this.container.dataset.reducedGraphics='true';}
+    this.software=software;
+    if(software){this.renderer.setPixelRatio(.65);this.renderer.shadowMap.enabled=false;this.container.dataset.reducedGraphics='true';}
     this.renderer.domElement.setAttribute('aria-label', '3D kart combat arena'); this.renderer.domElement.tabIndex = 0; this.container.append(this.renderer.domElement);
     addIslandLighting(this.scene);
+    this.scene.add(this.throwPreview.group);
     // Tiny original sky cubemap provides broad, soft material reflections, no screen-space pass.
     const faces=Array.from({length:6},(_,i)=>{
       const canvas=document.createElement('canvas');canvas.width=canvas.height=32;const context=canvas.getContext('2d')!;
@@ -78,6 +87,13 @@ export class ArenaGame {
     this.renderer.setAnimationLoop(() => this.frame());
     this.inputTimer = setInterval(() => this.stepInputs(), DT * 1000);
     this.renderer.domElement.addEventListener('webglcontextlost', this.contextLost);
+    this.applyQuality();
+  }
+  private applyQuality() {
+    const reduced=this.software || this.automaticReduced || graphicsMode()==='low';
+    this.container.dataset.reducedGraphics=String(reduced);this.container.dataset.graphicsMode=graphicsMode();
+    this.renderer.setPixelRatio(reduced ? .65 : Math.min(devicePixelRatio,1.25));
+    this.renderer.shadowMap.enabled=!reduced;this.renderer.shadowMap.needsUpdate=true;this.updateSize();this.idleDirty=true;
   }
   private contextLost = (event: Event) => { event.preventDefault(); console.error('WebGL context lost. Reload to restore the renderer.'); this.container.dataset.error = 'Graphics connection lost. Reload this page to restore the arena.'; };
   private updateSize() { const width = this.container.clientWidth, height = this.container.clientHeight; if (!width || !height) return; this.camera.aspect = width / height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width, height); this.idleDirty = true; }
@@ -100,18 +116,28 @@ export class ArenaGame {
     const activeProjectiles = new Set(state.projectiles.map(p => p.id));
     for (const [key, visual] of this.projectiles) if (!activeProjectiles.has(key)) { this.scene.remove(visual); this.projectiles.delete(key); }
     for (const p of state.projectiles) if (!this.projectiles.has(p.id)) {
-      let template = this.projectileTemplates.get(p.kind); if (!template) { template = createProjectile(p.kind); this.projectileTemplates.set(p.kind, template); }
-      const visual = template.clone(); this.scene.add(visual); this.projectiles.set(p.id, visual);
+      let template = this.projectileTemplates.get(p.kind); if (!template) { template = createProjectile(p.kind); this.projectileTemplates.set(p.kind, template); this.projectileBatches.set(p.kind,{batch:new PickupBatch(this.scene,template,512,'projectile-instances-'+p.kind),visuals:[]}); }
+      const visual = template.clone(); this.projectiles.set(p.id, visual);
     }
     const self = state.players.find(p => p.id === id);
     for (const event of state.events) if (event.id > this.lastEvent) {
       this.lastEvent = event.id;
       if (state.phase !== 'playing') continue;
       if (state.time - event.at > 0.3) continue;
-      this.particles.emit(event);
+      const owner = state.players.find(p => p.id === event.player), kart = this.karts.get(event.player);
+      let effect = event;
+      if (event.kind === 'fire' && event.weapon && WEAPONS[event.weapon].kind && event.weapon !== 'mine' && owner && kart) {
+        // Use the named rendered attachment: prediction must not leave flashes behind the kart.
+        const source = event.weapon === 'cannon' ? kart.cannon : ['rocket', 'homing', 'blastMissile'].includes(event.weapon) ? kart.launcher : event.weapon === 'bomb' ? null : kart.turret;
+        const attachment = event.weapon === 'bomb' ? kart.group.getObjectByName('bomb-muzzle') : source?.getObjectByName((event.weapon === 'cannon' ? 'cannon' : source === kart.launcher ? 'rocket' : 'machineGun') + '-muzzle');
+        kart.group.updateMatrixWorld(true);
+        const tip = attachment?.getWorldPosition(new THREE.Vector3()) ?? presentedMuzzle(event, owner, { ...owner, ...kart.group.position, yaw: kart.group.rotation.y });
+        if (clearShot({ x: kart.group.position.x, y: kart.group.position.y + .85, z: kart.group.position.z }, tip, WEAPONS[event.weapon].radius)) effect = { ...event, x: tip.x, y: tip.y, z: tip.z };
+      }
+      this.particles.emit(effect);
       const distance = self ? Math.hypot(self.x - event.x, self.z - event.z) : 30;
       this.audio.event(event, distance);
-      if (event.kind === 'explosion' && distance < 14 || event.kind === 'collision' && event.player === id) this.shake = Math.min(.12, this.shake + .09 / (1 + distance / 5));
+      if (event.kind === 'explosion' && distance < 14 || event.kind === 'collision' && event.player === id || event.kind === 'hit' && event.weapon === 'orbit' && (event.player === id || event.target === id)) this.shake = Math.min(.12, this.shake + .09 / (1 + distance / 5));
     }
     this.lastFrame = performance.now();
   }
@@ -142,6 +168,7 @@ export class ArenaGame {
     const state = connection.state.snapshot, id = connection.state.id;
     const self = state?.players.find(p => p.id === id) ?? null;
     const playing = state?.phase === 'playing' && connection.state.status === 'connected';
+    for(const entry of this.projectileBatches.values())entry.visuals.length=0;
     if (state) {
       for (const p of state.players) this.renderKart(p, id, now, delta, state);
       for (const box of state.pickups) {
@@ -152,6 +179,7 @@ export class ArenaGame {
         const visual = this.projectiles.get(p.id)!;
         const position = ballisticPosition(p, extrapolation, p.kind === 'cannonball' || p.kind === 'bomb' ? CONFIG.gravity : 0);
         visual.position.set(position.x, position.y, position.z);
+        this.projectileBatches.get(p.kind)!.visuals.push(visual);
         if (p.kind !== 'mine' && p.kind !== 'bomb') visual.lookAt(visual.position.x + p.vx, visual.position.y + p.vy, visual.position.z + p.vz);
         if (p.kind === 'mine') visual.scale.setScalar(state.time >= p.armedAt ? 1 + Math.sin(now / 100) * 0.06 : 0.85);
         if (p.kind === 'bomb') {
@@ -162,11 +190,15 @@ export class ArenaGame {
       }
     }
     if(!state)for(const visual of this.pickups.values())visual.visible=false;
+    this.throwPreview.update(this.prediction.kart ?? self ?? {x:0,y:0,z:0,yaw:0,vx:0,vy:0,vz:0}, !!playing && !!self?.charging && self.weapon === 'bomb' && self.health > 0);
     this.pickupBatch.sync(this.pickups.values());
+    for(const entry of this.projectileBatches.values())entry.batch.sync(entry.visuals);
     if (playing && self) this.followCamera(self, delta);
     else { this.camera.position.set(70, 65, 72); this.camera.lookAt(0, 0, 0); this.cameraReady = false; }
     this.audio.update(self, this.prediction.kart, !!playing, delta);
     this.environment.update(now / 1000, this.camera.position, this.container.dataset.reducedGraphics === 'true');
+    const sky=this.scene.getObjectByName('island-sky') as THREE.Mesh<THREE.SphereGeometry,THREE.ShaderMaterial>;
+    if(sky?.material.uniforms){sky.material.uniforms.time!.value=now/1000;sky.material.uniforms.detail!.value=this.container.dataset.reducedGraphics==='true'?0:1;}
     this.particles.update(delta);
     if (playing && !document.hidden && now - this.lastShadow >= 1000 / 20) { this.renderer.shadowMap.needsUpdate = true; this.lastShadow = now; }
     this.renderer.render(this.scene, this.camera);
@@ -183,8 +215,7 @@ export class ArenaGame {
       // Foreground measurements only; menu/background throttling never selects low quality.
       this.slowSamples = playing && !document.hidden && this.frameAverage > 50 ? this.slowSamples + 1 : 0;
       if (this.slowSamples >= 3) {
-        if (this.renderer.getPixelRatio() > 0.85) { this.renderer.setPixelRatio(0.85); this.updateSize(); }
-        this.renderer.shadowMap.enabled = false; this.container.dataset.reducedGraphics = 'true';
+        if(!this.automaticReduced){this.automaticReduced=true;this.applyQuality();}
       } else if (playing && !document.hidden && this.frameAverage > 36 && this.renderer.getPixelRatio() > 1) { this.renderer.setPixelRatio(1); this.updateSize(); }
     }
   }
@@ -202,7 +233,9 @@ export class ArenaGame {
     (visual.shield.material as THREE.MeshBasicMaterial).opacity = shieldHit ? 0.38 : 0.12 + Math.sin(now / 240) * 0.035;
     visual.boost.visible = state.time < p.boostUntil; visual.boost.scale.y = 0.8 + Math.sin(now / 45) * 0.2;
     visual.orbit.visible = state.phase === 'playing' && state.time < (p.orbitUntil ?? 0);
-    visual.orbit.rotation.y = state.time * 5;
+    const orbitTime = state.time + Math.min(.1,(now-this.lastFrame)/1000);
+    visual.orbit.rotation.y = orbitTime * WEAPONS.orbit.orbit!.speed - visual.group.rotation.y;
+    if(visual.orbit.visible)this.particles.orbit({...p,...visual.group.position},orbitTime,dt);
     visual.label.visible = p.id !== id;
     visual.missileMarker.visible = state.projectiles.some(projectile => projectile.kind === 'homing' && projectile.target === p.id);
     visual.missileMarker.rotation.z = now / 400;
@@ -233,7 +266,8 @@ export class ArenaGame {
     visual.turret.rotation.y += (turretYaw - visual.turret.rotation.y) * (1 - Math.exp(-18 * dt));
     visual.turret.rotation.x += ((aim ? -Math.asin(aim.y) : 0) - visual.turret.rotation.x) * (1 - Math.exp(-18 * dt));
     visual.cannon.visible = p.weapon === 'cannon' || state.events.some(e => e.kind === 'fire' && e.player === p.id && e.weapon === 'cannon' && state.time - e.at < 0.6);
-    visual.turret.visible = !visual.cannon.visible;
+    visual.launcher.visible = ['rocket', 'homing', 'blastMissile'].includes(p.weapon ?? '') || state.events.some(e => e.kind === 'fire' && e.player === p.id && ['rocket', 'homing', 'blastMissile'].includes(e.weapon ?? '') && state.time - e.at < .4);
+    visual.turret.visible = !visual.cannon.visible && !visual.launcher.visible;
     if (state.time < p.boostUntil && state.phase === 'playing') this.particles.boost(position, dt);
     if (p.health > 0 && state.phase === 'playing') this.particles.drive(position, p.id, dt);
   }
@@ -243,7 +277,7 @@ export class ArenaGame {
     if (!this.cameraReady) this.renderYaw = visual.group.rotation.y;
     this.renderYaw += angleDelta(this.renderYaw, visual.group.rotation.y) * (1 - Math.exp(-9 * dt));
     const fx = Math.sin(this.renderYaw), fz = Math.cos(this.renderYaw);
-    this.aim.set(pos.x + fx * 3.6, pos.y + 1.85, pos.z + fz * 3.6);
+    this.aim.set(pos.x + fx * 4, pos.y + 2.1, pos.z + fz * 4);
     const speed = Math.min(1, Math.hypot(self.vx, self.vz) / (CONFIG.maxSpeed * CONFIG.boostMultiplier));
     const distance = 8.8 + speed * 2.2, fov = 62 + speed * 5;
     this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-3 * dt)); this.camera.updateProjectionMatrix();
@@ -263,7 +297,9 @@ export class ArenaGame {
   }
   dispose() {
     this.renderer.setAnimationLoop(null); clearInterval(this.inputTimer); this.unsubscribe(); this.controls.dispose(); this.audio.dispose(); this.resize.disconnect(); this.particles.dispose();
+    this.unsubscribeQuality();
     this.pickupBatch.dispose();
+    for(const entry of this.projectileBatches.values())entry.batch.dispose();
     disposeObject(this.scene); disposeObject(this.pickupTemplate); for (const template of this.projectileTemplates.values()) disposeObject(template);
     this.scene.environment?.dispose();
     this.renderer.domElement.removeEventListener('webglcontextlost', this.contextLost); this.renderer.dispose(); this.renderer.domElement.remove();
